@@ -77,7 +77,10 @@ Every supported file is first normalized to markdown, then only the markdown is 
 - `pywebview` window wraps the existing web UI (same code, no separate native UI to build).
 - `PyInstaller` bundles Python backend + dependencies (including `torch`/`transformers` for the reranker and Docling, the bundled reranker model weights, and **all** Docling model artifacts — layout, TableFormer, and OCR models, which Docling otherwise downloads from HuggingFace on first run; prefetched at build time via `docling-tools models download` and pointed at via `artifacts_path` in the app data dir) into a `.app`; wrapped into a `.dmg` for distribution.
 - Ollama is **not** bundled (separate installer, large binary) — the app detects and guides instead.
-- **Packaging risk flag**: reliably bundling `torch`'s native libraries and MPS backend support via PyInstaller on Apple Silicon is not guaranteed to work cleanly (known issues: missing hidden imports, binary bloat, silent fallback to CPU). This risk now applies to **two** heavy ML dependencies (the reranker and Docling), increasing both bundle size and surface area for bundling issues. This should be validated with a small spike before committing further implementation time; if bundling proves unreliable, the documented fallback is running both on CPU (slower, but functionally correct).
+- **Packaging risk — resolved via Phase 0 spike**: reliably bundling `torch`'s native libraries and MPS backend support via PyInstaller on Apple Silicon is not guaranteed to work cleanly (known issues: missing hidden imports, binary bloat, silent fallback to CPU), and the risk applies to two heavy ML dependencies (the reranker and Docling). **Phase 0 of the implementation plan is a timeboxed spike**: build a throwaway PyInstaller `.app` that performs one Docling conversion and one reranker scoring call, verifying both run (and on which device). Pre-agreed fallback order if the spike fails:
+  1. Reranker → switch to the ONNX export of `bge-reranker-v2-m3` via `onnxruntime` (bundles cleanly, no torch needed for reranking).
+  2. Docling (or both) → abandon PyInstaller freezing; ship the `.app` as a thin native launcher embedding a self-contained Python runtime (python-build-standalone) + venv, where torch runs unmodified. Larger app, custom build script, but a known-reliable pattern for ML desktop apps.
+  3. MPS unavailable in any bundled form → CPU execution (slower, functionally correct).
 
 **First-run onboarding wizard** (shown once, or whenever setup is incomplete):
 1. **Ollama check** — pings `localhost:11434`; if unavailable, shows install instructions + download link with a "Recheck" button.
@@ -97,7 +100,7 @@ After first run, the app launches directly into the chat screen unless a check (
 | Empty corpus | Chat clearly states no documents are ingested yet |
 | No relevant chunks found | Deterministic refusal + closest N chunks as related documents |
 | Unsigned app / Gatekeeper | Documented right-click → Open workaround for users |
-| torch/MPS bundling fails in PyInstaller | Falls back to CPU-only reranking (slower, functionally correct) |
+| torch/MPS bundling fails in PyInstaller | Pre-agreed fallback chain: ONNX reranker → embedded-runtime launcher → CPU execution (see Phase 0 spike, §5) |
 
 ## Testing approach
 
