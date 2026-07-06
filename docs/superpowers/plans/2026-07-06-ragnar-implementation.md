@@ -236,7 +236,7 @@ def default_data_dir() -> Path:
 
 @dataclass
 class Settings:
-    watched_folder: str = str(Path.home() / "Documents" / "Ragnar" / "Documents")
+    watched_folder: str = str(Path.home() / "Documents" / "RAG Chat" / "Documents")  # matches spec §5 default
     llm_model: str = "qwen2.5:14b"
     embed_model: str = "bge-m3"
     rerank_floor: float = 0.3
@@ -720,6 +720,33 @@ def chunk_document(doc, tokenizer_path: str | None = None, max_tokens: int = 500
 Note: HybridChunker's default tokenizer downloads once on the dev machine. If the exact `add_heading`/`add_text`/`ProvenanceItem` signatures differ in the installed docling-core version, adapt the test builder to the installed API (check `python -c "import docling_core; print(docling_core.__version__)"` and the `DoclingDocument` docstrings) — the assertions must stay as written.
 
 - [ ] **Step 3: Verify pass**, **Step 4: Commit** — `git commit -am "feat: provenance-aware chunking via HybridChunker"`
+
+- [ ] **Step 5 (ml-marked, depends on Task 4's XLSX fixture): verify table row-grouping + header repetition** — the spec requires that when a converted Excel table is split into multiple chunks, the header row is repeated into every group. Write:
+
+```python
+import pytest
+from pathlib import Path
+from ragnar.convert import Converter
+from ragnar.chunker import chunk_document
+from docling_core.types.doc import DoclingDocument
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+@pytest.mark.ml
+def test_xlsx_table_chunks_repeat_header_row(tmp_path):
+    conv = Converter(converted_dir=tmp_path)
+    res = conv.convert(FIXTURES / "sample.xlsx", doc_id="dx")  # needs >20 data rows to force >1 group
+    doc = DoclingDocument.load_from_json(res.json_path)
+    chunks = chunk_document(doc)
+    table_chunks = [c for c in chunks if "|" in c.text]
+    assert len(table_chunks) >= 2
+    header = table_chunks[0].text.splitlines()[0]
+    assert all(header in c.text for c in table_chunks)  # header present in every group
+```
+If `HybridChunker`'s default table serialization does NOT repeat the header per chunk (check by running this test first — it may already pass, since HybridChunker's `TableSerializer` often includes headers per split), implement the fallback: post-process `chunk_document`'s output by detecting consecutive table-row chunks belonging to the same table (via `ch.meta.doc_items` pointing at the same `TableItem`) and prepending the first row's text to each subsequent chunk. Do NOT skip this test — it is the one place the plan verifies a spec-mandated behavior (spec §1: "column headers repeated per chunk for context").
+
+- [ ] **Step 6: OCR low-confidence flagging** — spec §1 requires low-confidence OCR pages to be "ingested but flagged as lower-reliability sources." Docling's page prediction exposes per-page/per-cell confidence (check the installed version's `docling_core.types.doc.document.DoclingDocument` / `ConversionResult.confidence` — the exact attribute name varies by Docling release; inspect via `python -c "from docling.document_converter import DocumentConverter; r = DocumentConverter().convert('tests/fixtures/sample.pdf'); print(r.confidence)"`). Add a `low_confidence: bool` field to `Chunk`, populate it in `chunk_document` from the source page's confidence score against a threshold (e.g. mean OCR confidence < 0.7), thread it into `IngestService._chunk_embed_store`'s metadata (`"low_confidence": c.low_confidence`), and surface it in the UI document list (Task 15) as a small badge. Write one `@pytest.mark.ml` test against a real scanned-image fixture confirming `low_confidence` is `True` for it and `False` for a native-text PDF. Commit separately: `git commit -am "feat: OCR low-confidence flagging"`.
+- [ ] **Step 7: Commit the table-header test** — `git commit -am "test: verify xlsx table header repetition across chunks"`
 
 ---
 
@@ -1276,6 +1303,52 @@ def test_remove_document_cleans_everything(tmp_path):
     assert reg.list_all() == []
     assert not Path(rec.archive_path).exists() and not Path(rec.md_path).exists()
     assert store.query([7.0, 0.0], n=5) == []
+
+def test_reingest_deletes_stale_converted_artifacts(tmp_path):
+    svc, watched, reg, _ = make_service(tmp_path)
+    f = watched / "a.md"; f.write_text("v1"); svc.ingest_file(f)
+    old = reg.list_all()[0]
+    old_md, old_json = Path(old.md_path), Path(old.json_path)
+    assert old_md.exists() and old_json.exists()
+    Path(old.archive_path).rename(f)  # bring the (changed) file back to re-trigger ingest
+    f.write_text("v2-longer")
+    svc.ingest_file(f)
+    assert not old_md.exists() and not old_json.exists()  # stale artifacts cleaned up
+
+def test_chunk_with_no_page_stores_zero_not_none(tmp_path):
+    # Chroma metadata rejects None values; page=None must be coerced to 0.
+    def chunker_no_page(json_path):
+        return [Chunk(text="chunk-1", page=None, chunk_index=0)]
+    watched = tmp_path / "w"; watched.mkdir()
+    reg = Registry(tmp_path / "reg.sqlite3")
+    store = VectorStore(tmp_path / "chroma", embed_model_id="bge-m3")
+    arch = Archiver(watched, tmp_path / "arch", on_self_move=lambda p: None)
+    svc = IngestService(registry=reg, store=store, archiver=arch,
+                        converter=FakeConverter(tmp_path / "conv"),
+                        embedder=FakeEmbedder(), chunk_fn=chunker_no_page)
+    f = watched / "a.md"; f.write_text("no page info")
+    svc.ingest_file(f)  # must not raise
+    assert store.query([12.0, 0.0], n=1)[0].metadata["page"] == 0
+```
+
+- [ ] **Step 1b: Write failing tests for re-embed and startup scan**
+
+```python
+def test_reembed_all_restores_chunks_from_json_without_reconverting(tmp_path):
+    svc, watched, reg, store = make_service(tmp_path)
+    f = watched / "a.md"; f.write_text("# Hello"); svc.ingest_file(f)
+    store.reset()  # simulate an embed-model switch wiping the collection
+    assert store.query([7.0, 0.0], n=5) == []
+    svc.reembed_all()
+    assert store.query([7.0, 0.0], n=1)[0].metadata["source"] == "a.md"
+
+def test_scan_existing_ingests_files_present_at_startup(tmp_path):
+    svc, watched, reg, store = make_service(tmp_path)
+    (watched / "a.md").write_text("hello")
+    (watched / "b.md").write_text("world")
+    svc.scan_existing()
+    assert {r.source_path.split("/")[-1] for r in reg.list_all()} == {"a.md", "b.md"}
+    assert all(r.status == "done" for r in reg.list_all())
 ```
 
 - [ ] **Step 2: Verify fail**, implement:
@@ -1311,6 +1384,9 @@ class IngestService:
             return  # unchanged file re-appeared; nothing to do
         if existing:
             self.store.delete_document(existing.doc_id)
+            for p in (existing.md_path, existing.json_path):  # avoid orphaned converted/ files
+                if p and Path(p).exists():
+                    Path(p).unlink()
         doc_id = uuid.uuid4().hex[:12]
         self.registry.upsert(doc_id=doc_id, source_path=str(path), content_hash=h,
                              status="processing")
@@ -1319,17 +1395,34 @@ class IngestService:
         except ConversionError as e:
             self.registry.mark_failed(doc_id, str(e))
             return
-        chunks = self.chunk_fn(conv.json_path)
-        if chunks:
-            embeddings = self.embedder.embed_texts([c.text for c in chunks])
-            self.store.add_chunks(
-                doc_id, texts=[c.text for c in chunks], embeddings=embeddings,
-                metadatas=[{"source": path.name, "page": c.page,
-                            "chunk_index": c.chunk_index} for c in chunks])
+        self._chunk_embed_store(doc_id, conv.json_path, path.name)
         archive_path = self.archiver.archive(path, h)
         self.registry.mark_done(doc_id, md_path=str(conv.md_path),
                                 json_path=str(conv.json_path),
                                 archive_path=str(archive_path))
+
+    def _chunk_embed_store(self, doc_id: str, json_path: Path, source_name: str) -> None:
+        import time
+        chunks = self.chunk_fn(json_path)
+        if not chunks:
+            return
+        embeddings = self.embedder.embed_texts([c.text for c in chunks])
+        now = time.time()
+        # Chroma rejects None metadata values; page=None (no provenance) becomes 0.
+        self.store.add_chunks(
+            doc_id, texts=[c.text for c in chunks], embeddings=embeddings,
+            metadatas=[{"source": source_name, "page": c.page if c.page is not None else 0,
+                        "chunk_index": c.chunk_index, "ingested_at": now} for c in chunks])
+
+    def reembed_all(self) -> None:
+        """Re-chunk + re-embed every 'done' document from its stored conversion JSON,
+        without re-converting or touching the watched folder. Used when the embedding
+        model changes and the vector store has just been reset (spec §1: 'triggers a
+        full re-embed of the corpus')."""
+        for rec in self.registry.list_all():
+            if rec.status == "done" and rec.json_path and Path(rec.json_path).exists():
+                source_name = Path(rec.source_path).name
+                self._chunk_embed_store(rec.doc_id, Path(rec.json_path), source_name)
 
     def remove_document(self, doc_id: str) -> None:
         rec = self.registry.get(doc_id)
@@ -1347,8 +1440,15 @@ class IngestService:
         if rec and rec.status != "done":
             self.store.delete_document(rec.doc_id)
             self.registry.delete(rec.doc_id)
+
+    def scan_existing(self) -> None:
+        """Startup catch-up: (re)ingest every file currently in the watched folder.
+        Covers files dropped while the app was closed, and rows stuck in 'processing'
+        after a crash (ingest_file re-attempts anything not status=='done')."""
+        for p in sorted(Path(self.archiver.watched_folder).rglob("*")):
+            if p.is_file() and not p.name.startswith("."):
+                self.ingest_file(p)
 ```
-Note the metadata `page` value may be `None` for chunks without provenance; ChromaDB rejects `None` metadata values — coerce with `"page": c.page or 0` and treat `0` as "no page" in the UI. Add a test for a `Chunk(page=None)` if this bites.
 
 Also create an `Embedder` adapter in `ingest.py` (used by main wiring, trivially thin, no test needed beyond integration):
 
@@ -1436,6 +1536,25 @@ def test_suppressed_path_does_not_fire_deletion(tmp_path):
     finally:
         w.stop()
 
+def test_ready_files_are_processed_one_at_a_time_not_concurrently(tmp_path):
+    active = []
+    max_concurrent = []
+    def slow_ingest(p):
+        active.append(1)
+        max_concurrent.append(len(active))
+        time.sleep(0.15)
+        active.pop()
+    w = FolderWatcher(tmp_path, on_file_ready=slow_ingest, on_file_deleted=lambda p: None,
+                      debounce_seconds=0.1)
+    w.start()
+    try:
+        for name in ("a.md", "b.md", "c.md"):
+            (tmp_path / name).write_text(name)
+        assert wait_for(lambda: len(max_concurrent) == 3, timeout=5.0)
+        assert max(max_concurrent) == 1  # never more than one in flight
+    finally:
+        w.stop()
+
 def test_hidden_files_ignored(tmp_path):
     rec = Recorder()
     w = FolderWatcher(tmp_path, on_file_ready=rec.ingest, on_file_deleted=rec.delete,
@@ -1453,6 +1572,7 @@ def test_hidden_files_ignored(tmp_path):
 
 ```python
 from __future__ import annotations
+import queue
 import threading
 from pathlib import Path
 from typing import Callable
@@ -1462,6 +1582,11 @@ from watchdog.observers import Observer
 
 class FolderWatcher(FileSystemEventHandler):
     """Watches a folder; fires on_file_ready after a per-file quiet period.
+
+    Ready paths are handed to a single worker thread, so ingestion of a bulk
+    drop runs one file at a time (spec assumes sequential processing; running
+    Docling/embedding calls concurrently across per-file Timer threads would
+    race on shared resources like the lazy-initialized Docling converter).
 
     suppress(path) marks the next deletion event for that path as self-inflicted
     (the archiver moving the file out) so it is swallowed once.
@@ -1476,8 +1601,11 @@ class FolderWatcher(FileSystemEventHandler):
         self._suppressed: set[str] = set()
         self._lock = threading.Lock()
         self._observer = Observer()
+        self._queue: queue.Queue[str | None] = queue.Queue()
+        self._worker = threading.Thread(target=self._drain_queue, daemon=True)
 
     def start(self) -> None:
+        self._worker.start()
         self._observer.schedule(self, str(self.folder), recursive=True)
         self._observer.start()
 
@@ -1488,6 +1616,8 @@ class FolderWatcher(FileSystemEventHandler):
             self._timers.clear()
         self._observer.stop()
         self._observer.join(timeout=5)
+        self._queue.put(None)  # sentinel: stop the worker
+        self._worker.join(timeout=5)
 
     def suppress(self, path: Path) -> None:
         with self._lock:
@@ -1517,8 +1647,15 @@ class FolderWatcher(FileSystemEventHandler):
             if path_str in self._suppressed:
                 self._suppressed.discard(path_str)
                 return
-        if Path(path_str).exists():
-            self.on_file_ready(Path(path_str))
+        self._queue.put(path_str)  # hand off to the single worker; don't run inline
+
+    def _drain_queue(self) -> None:
+        while True:
+            path_str = self._queue.get()
+            if path_str is None:  # stop sentinel
+                return
+            if Path(path_str).exists():
+                self.on_file_ready(Path(path_str))
 
     def on_created(self, event):
         if not event.is_directory:
@@ -1595,7 +1732,8 @@ def make_client(tmp_path, registry=None):
     return TestClient(app), cfg, reg
 
 def test_chat_endpoint(tmp_path):
-    client, *_ = make_client(tmp_path)
+    client, cfg, reg = make_client(tmp_path)
+    reg.upsert(doc_id="d1", source_path="/w/a.pdf", content_hash="h", status="done")  # non-empty corpus
     r = client.post("/api/chat", json={"question": "hi"})
     assert r.status_code == 200
     body = r.json()
@@ -1624,6 +1762,12 @@ def test_documents_list_and_markdown_view(tmp_path):
 def test_delete_document(tmp_path):
     client, *_ = make_client(tmp_path)
     assert client.delete("/api/documents/d1").status_code == 200
+
+def test_chat_with_empty_corpus_says_so_instead_of_generic_refusal(tmp_path):
+    client, cfg, reg = make_client(tmp_path)
+    r = client.post("/api/chat", json={"question": "anything"}).json()
+    assert r["refused"] is True
+    assert "no documents" in r["answer"].lower()
 
 def test_status_reports_setup_state(tmp_path):
     client, *_ = make_client(tmp_path)
@@ -1678,6 +1822,9 @@ def create_app(config, registry, chat, ingest, ollama) -> FastAPI:
 
     @app.post("/api/chat")
     def chat_endpoint(body: ChatIn):
+        if not registry.list_all():
+            return {"answer": "No documents have been ingested yet — add one to get started.",
+                    "refused": True, "citations": [], "related": []}
         r = chat.answer(body.question)
         return {"answer": r.answer, "refused": r.refused,
                 "citations": r.citations, "related": r.related}
@@ -1835,6 +1982,7 @@ const show = (id) => $(id).classList.remove("hidden");
 const hide = (id) => $(id).classList.add("hidden");
 
 let status = null;
+let selectedLlmModel = null;  // set by pullModels(), sent by completeSetup()
 
 async function api(path, opts) {
   const r = await fetch(path, opts);
@@ -1875,9 +2023,10 @@ async function pullModels() {
     $("pull-progress").textContent = `chat model: ${a.status} · embeddings: ${b.status}`;
     if (a.status === "done" && b.status === "done") {
       clearInterval(timer);
-      await api("/api/setup/complete", {method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({llm_model: llm})});
+      // NOTE: do not call /api/setup/complete here — that flag means "onboarding
+      // finished", and setting it now would skip the folder step (step 3) entirely.
+      // Just refresh status; route() advances to wiz-folder once models are ready.
+      selectedLlmModel = llm;
       await refreshStatus();
     }
   }, 2000);
@@ -1886,7 +2035,8 @@ async function pullModels() {
 async function completeSetup() {
   await api("/api/setup/complete", {method: "POST",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({watched_folder: $("folder-input").value || null})});
+    body: JSON.stringify({watched_folder: $("folder-input").value || null,
+                          llm_model: selectedLlmModel})});
   await refreshStatus();
 }
 
@@ -1991,6 +2141,22 @@ def test_build_services_wires_everything(tmp_path):
     svc = build_services(cfg)
     assert svc.app is not None and svc.watcher is not None
     assert svc.ingest.registry is svc.registry
+
+def test_embed_model_change_triggers_reembed_not_silent_data_loss(tmp_path, monkeypatch):
+    # Regression test for the bug where switching embed models wiped the vector
+    # store and left it empty forever (registry rows stayed 'done' with nothing
+    # to re-trigger ingestion). build_services must call ingest.reembed_all().
+    calls = []
+    monkeypatch.setattr("ragnar.ingest.IngestService.reembed_all", lambda self: calls.append(1))
+    cfg = Config(data_dir=tmp_path)
+    cfg.settings.watched_folder = str(tmp_path / "w")
+    cfg.settings.embed_model = "bge-m3"
+    build_services(cfg)  # first run: store is fresh, embed_model matches -> no reembed needed
+    assert calls == []
+    cfg2 = Config(data_dir=tmp_path)
+    cfg2.settings.embed_model = "new-embed-model"  # simulate a model switch on next launch
+    build_services(cfg2)
+    assert calls == [1]  # reembed_all was invoked exactly once
 ```
 
 - [ ] **Step 2: Implement**
@@ -2030,8 +2196,11 @@ def build_services(cfg: Config, bundled_models_dir: Path | None = None) -> Servi
     ollama = OllamaClient()
     embedder = OllamaEmbedder(ollama, cfg.settings.embed_model)
     store = VectorStore(cfg.chroma_dir, embed_model_id=cfg.settings.embed_model)
-    if store.needs_reembed:
-        store.reset()  # v1: corpus re-ingests as files are re-added; registry rows stay valid
+    needs_reembed = store.needs_reembed
+    if needs_reembed:
+        store.reset()  # wipes vectors; re-embed of the existing corpus happens below,
+                       # once `ingest` exists, via reembed_all() (spec §1: embed-model
+                       # mismatch "triggers a full re-embed of the corpus")
     reranker = Reranker(model_path=str(bundled_models_dir / "reranker")
                         if bundled_models_dir else "BAAI/bge-reranker-v2-m3")
     retriever = Retriever(store, embedder, reranker, floor=cfg.settings.rerank_floor)
@@ -2045,6 +2214,8 @@ def build_services(cfg: Config, bundled_models_dir: Path | None = None) -> Servi
                         if watcher_holder else None)
     ingest = IngestService(registry=registry, store=store, archiver=archiver,
                            converter=converter, embedder=embedder)
+    if needs_reembed:
+        ingest.reembed_all()
     watcher = FolderWatcher(Path(cfg.settings.watched_folder),
                             on_file_ready=ingest.ingest_file,
                             on_file_deleted=ingest.handle_deleted)
@@ -2057,6 +2228,7 @@ def run() -> None:
     import uvicorn, webview
     cfg = Config()
     svc = build_services(cfg, bundled_models_dir=_bundled_models_dir())
+    svc.ingest.scan_existing()  # catch up on files dropped / crashes while the app was closed
     svc.watcher.start()
     server = uvicorn.Server(uvicorn.Config(svc.app, host=HOST, port=PORT, log_level="warning"))
     threading.Thread(target=server.run, daemon=True).start()
@@ -2143,6 +2315,11 @@ Deterministic E2E without ML: real registry/store/archiver/watcher/api; fake emb
 import time
 from pathlib import Path
 from fastapi.testclient import TestClient
+# tests/ has __init__.py (Task 1), so fakes defined in other test modules are
+# importable directly — no need to redefine or copy-paste them here.
+from tests.test_ingest import FakeConverter
+from tests.test_reranker import FakeCrossEncoder
+from tests.test_chat import FakeLLM
 
 VOCAB = ["vacation", "laptop", "server", "days", "code"]
 
@@ -2154,9 +2331,10 @@ class KeywordEmbedder:
     def embed_query(self, text): return self._vec(text)
 
 def test_full_pipeline_answer_and_refusal(tmp_path):
-    # assemble like main.build_services but with fakes for converter/embedder/llm/reranker-model
-    # (copy the wiring, substituting: FakeConverter from test_ingest, KeywordEmbedder,
-    #  Reranker(model=FakeCrossEncoder from test_reranker), FakeLLM("Employees get 26 days [1]."))
+    # Assemble like main.build_services, but substitute: FakeConverter (imported above)
+    # for Docling, KeywordEmbedder (defined above) for Ollama embeddings,
+    # Reranker(model=FakeCrossEncoder()) (imported above) for the real cross-encoder,
+    # and FakeLLM("Employees get 26 days [1].") (imported above) in place of Ollama chat.
     ...
     # 1. drop a file into the watched folder
     watched = Path(cfg.settings.watched_folder)
