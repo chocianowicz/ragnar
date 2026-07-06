@@ -688,6 +688,8 @@ class Chunk:
     text: str
     page: int | None
     chunk_index: int
+    low_confidence: bool = False  # set by Task 6 Step 6 (OCR confidence); default keeps
+                                  # every existing Chunk(...) call site (Tasks 12, 18) valid
 
 
 @lru_cache(maxsize=1)
@@ -745,7 +747,8 @@ def test_xlsx_table_chunks_repeat_header_row(tmp_path):
 ```
 If `HybridChunker`'s default table serialization does NOT repeat the header per chunk (check by running this test first — it may already pass, since HybridChunker's `TableSerializer` often includes headers per split), implement the fallback: post-process `chunk_document`'s output by detecting consecutive table-row chunks belonging to the same table (via `ch.meta.doc_items` pointing at the same `TableItem`) and prepending the first row's text to each subsequent chunk. Do NOT skip this test — it is the one place the plan verifies a spec-mandated behavior (spec §1: "column headers repeated per chunk for context").
 
-- [ ] **Step 6: OCR low-confidence flagging** — spec §1 requires low-confidence OCR pages to be "ingested but flagged as lower-reliability sources." Docling's page prediction exposes per-page/per-cell confidence (check the installed version's `docling_core.types.doc.document.DoclingDocument` / `ConversionResult.confidence` — the exact attribute name varies by Docling release; inspect via `python -c "from docling.document_converter import DocumentConverter; r = DocumentConverter().convert('tests/fixtures/sample.pdf'); print(r.confidence)"`). Add a `low_confidence: bool` field to `Chunk`, populate it in `chunk_document` from the source page's confidence score against a threshold (e.g. mean OCR confidence < 0.7), thread it into `IngestService._chunk_embed_store`'s metadata (`"low_confidence": c.low_confidence`), and surface it in the UI document list (Task 15) as a small badge. Write one `@pytest.mark.ml` test against a real scanned-image fixture confirming `low_confidence` is `True` for it and `False` for a native-text PDF. Commit separately: `git commit -am "feat: OCR low-confidence flagging"`.
+- [ ] **Step 6: OCR low-confidence flagging (chunk-level part only)** — spec §1 requires low-confidence OCR pages to be "ingested but flagged as lower-reliability sources." Docling's page prediction exposes per-page/per-cell confidence (check the installed version's `docling_core.types.doc.document.DoclingDocument` / `ConversionResult.confidence` — the exact attribute name varies by Docling release; inspect via `python -c "from docling.document_converter import DocumentConverter; r = DocumentConverter().convert('tests/fixtures/sample.pdf'); print(r.confidence)"`). Populate `Chunk.low_confidence` in `chunk_document` from the source page's confidence score against a threshold (e.g. mean OCR confidence < 0.7). Write one `@pytest.mark.ml` test against a real scanned-image fixture confirming `low_confidence` is `True` for it and `False` for a native-text PDF. Commit: `git commit -am "feat: OCR low-confidence flagging in chunker"`.
+  **Threading it through to storage and the UI happens later, in Task 12 and Task 15** (marked with ⚠ at those points below) — `IngestService` doesn't exist until Task 12, so nothing about it belongs here beyond the `Chunk` field itself.
 - [ ] **Step 7: Commit the table-header test** — `git commit -am "test: verify xlsx table header repetition across chunks"`
 
 ---
@@ -1412,7 +1415,10 @@ class IngestService:
         self.store.add_chunks(
             doc_id, texts=[c.text for c in chunks], embeddings=embeddings,
             metadatas=[{"source": source_name, "page": c.page if c.page is not None else 0,
-                        "chunk_index": c.chunk_index, "ingested_at": now} for c in chunks])
+                        "chunk_index": c.chunk_index, "ingested_at": now,
+                        "low_confidence": c.low_confidence} for c in chunks])
+        # ⚠ Task 6 Step 6 note: c.low_confidence defaults to False until that step is
+        # done; once it's populated by chunk_document, it flows through here unchanged.
 
     def reembed_all(self) -> None:
         """Re-chunk + re-embed every 'done' document from its stored conversion JSON,
@@ -1616,6 +1622,10 @@ class FolderWatcher(FileSystemEventHandler):
             self._timers.clear()
         self._observer.stop()
         self._observer.join(timeout=5)
+        # Known narrow race (acceptable for v1): a Timer already past its cancel
+        # window here could still enqueue a path after this sentinel, and that item
+        # would never drain. Harmless in practice — app shutdown discards it, and
+        # the file gets picked up by scan_existing() on next launch.
         self._queue.put(None)  # sentinel: stop the worker
         self._worker.join(timeout=5)
 
@@ -1906,6 +1916,8 @@ def create_app(config, registry, chat, ingest, ollama) -> FastAPI:
 
 No unit tests for JS (manual UAT covers it). Single-page app with three views driven by `/api/status`: **wizard** (Ollama check → model pull → folder → first doc), **chat**, **documents panel**.
 
+⚠ **Low-confidence badge (from Task 6 Step 6) is deferred, not included here**: `low_confidence` lives on individual chunks in the vector store, not on the `documents` registry row that `/api/documents` returns — showing it on the per-document list needs a query joining registry rows to their chunks' flags (e.g. `GET /api/documents/{id}` returning `any(chunk.low_confidence)`, or an aggregate column maintained on ingest). Out of scope for this pass; if desired, add it as a follow-on task after Task 19 rather than complicating this one.
+
 - [ ] **Step 1: Add the serving test**
 
 ```python
@@ -2003,7 +2015,13 @@ function route() {
     show("wizard");
     if (!status.ollama_up) show("wiz-ollama");
     else if (!status.llm_model_ready || !status.embed_model_ready) show("wiz-models");
-    else show("wiz-folder");
+    else {
+      // Fallback if the page reloaded between pulling models and finishing setup
+      // (selectedLlmModel is otherwise only set in-memory by pullModels()):
+      // /api/status always reports the currently configured llm_model.
+      if (!selectedLlmModel) selectedLlmModel = status.llm_model;
+      show("wiz-folder");
+    }
   } else {
     show("main");
     refreshDocs();
