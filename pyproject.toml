@@ -27,6 +27,3 @@ testpaths = ["tests"]
 markers = [
     "integration: requires Ollama and/or Qdrant running",
 ]
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/ragnar"]
