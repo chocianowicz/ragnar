@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "ragnar"
 version = "0.1.0"
@@ -23,3 +27,6 @@ testpaths = ["tests"]
 markers = [
     "integration: requires Ollama and/or Qdrant running",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ragnar"]
