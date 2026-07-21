@@ -1,0 +1,20 @@
+models:
+  llm: qwen2.5:14b
+  embedding: bge-m3
+  embedding_dim: 1024
+  reranker: BAAI/bge-reranker-v2-m3
+
+chunking:
+  strategy: fixed        # fixed | structural | semantic
+  target_tokens: 500
+  overlap_tokens: 50
+  table_rows_per_group: 20
+
+retrieval:
+  candidates: 25
+  top_k: 5
+  score_floor: 0.0       # calibrated in Task 24; 0.0 disables the floor
+
+storage:
+  data_dir: /app/data
+  collection: documents

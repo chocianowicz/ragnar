@@ -2,3 +2,13 @@
 
 # macOS
 .DS_Store
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# runtime data
+data/
+.env
