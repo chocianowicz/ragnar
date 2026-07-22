@@ -8,7 +8,7 @@ def test_pdf_ingested_then_answered_with_correct_citation():
     import os
     from core.config import Config
     from ingestion.parser import DoclingParser
-    from ingestion.chunkers.fixed import FixedChunker
+    from ingestion.chunkers.registry import build_chunker
     from ingestion.pipeline import Pipeline
     from retrieval.embedder import OllamaEmbedder
     from retrieval.store import QdrantStore
@@ -16,13 +16,14 @@ def test_pdf_ingested_then_answered_with_correct_citation():
     from generation.llm import OllamaLLM
     from generation.answerer import Answerer
 
+    cfg = Config()
     collection = f"e2e_{uuid.uuid4().hex[:8]}"
     embedder = OllamaEmbedder(os.environ["OLLAMA_BASE_URL"], "bge-m3")
     store = QdrantStore(os.environ["QDRANT_URL"], collection, dim=1024)
     store.ensure_collection()
 
     try:
-        pipeline = Pipeline(DoclingParser(), FixedChunker(), embedder, store)
+        pipeline = Pipeline(DoclingParser(), build_chunker(cfg.chunking), embedder, store)
         result = pipeline.ingest(Path("tests/fixtures/sample.pdf"), "doc1")
         assert result.chunk_count > 0
 

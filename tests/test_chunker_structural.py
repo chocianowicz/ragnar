@@ -1,5 +1,9 @@
+import pytest
+
 from ingestion.parser import Block, ParsedDocument
+from ingestion.chunkers.fixed import FixedChunker
 from ingestion.chunkers.structural import StructuralChunker
+from ingestion.chunkers.registry import build_chunker
 
 
 def _doc(blocks):
@@ -51,3 +55,19 @@ def test_chunk_indices_are_sequential():
     doc = _doc([Block(text=f"Block {i}.", page=i) for i in range(1, 6)])
     chunks = StructuralChunker().chunk(doc, "d", "f.pdf")
     assert [c.chunk_index for c in chunks] == list(range(len(chunks)))
+
+
+def test_build_chunker_rejects_unknown_strategy():
+    with pytest.raises(ValueError, match="Unknown chunker"):
+        build_chunker({"strategy": "bogus"})
+
+
+def test_build_chunker_structural_applies_config():
+    chunker = build_chunker({"strategy": "structural", "target_tokens": 300})
+    assert isinstance(chunker, StructuralChunker)
+    assert chunker.target_chars == int(300 * 3.5)
+
+
+def test_build_chunker_fixed_returns_fixed_chunker():
+    chunker = build_chunker({"strategy": "fixed"})
+    assert isinstance(chunker, FixedChunker)

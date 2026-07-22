@@ -1,8 +1,9 @@
 from core.models import Chunk
 from ingestion.parser import Block, ParsedDocument
 
-# Rough tokens-per-character for mixed PL/EN text. Polish words are longer
-# and diacritics cost extra bytes, so character heuristics under-count.
+# Rough tokens-per-character for mixed PL/EN text. English-centric BPE
+# tokenizers compress Polish less efficiently than English, so Polish text
+# yields fewer chars-per-token than English's typical ~4.
 CHARS_PER_TOKEN = 3.5
 
 
