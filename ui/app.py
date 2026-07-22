@@ -5,7 +5,7 @@ import streamlit as st
 
 from core.config import Config
 from ingestion.parser import DoclingParser
-from ingestion.chunkers.fixed import FixedChunker
+from ingestion.chunkers.registry import build_chunker
 from ingestion.pipeline import Pipeline
 from ingestion.storage import Storage
 from ingestion.registry_db import Registry
@@ -28,7 +28,7 @@ def build_services():
     store.ensure_collection()
     llm = OllamaLLM(cfg.ollama_url, cfg.llm_model)
 
-    pipeline = Pipeline(DoclingParser(), FixedChunker(), embedder, store)
+    pipeline = Pipeline(DoclingParser(), build_chunker(cfg.chunking), embedder, store)
     worker = IngestWorker(storage, registry, pipeline)
     worker.start()   # resets stale PROCESSING rows on startup
 
