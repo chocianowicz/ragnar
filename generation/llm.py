@@ -1,3 +1,5 @@
+import json
+
 import httpx
 
 
@@ -28,7 +30,6 @@ class OllamaLLM:
 
     def stream(self, system: str, user: str):
         """Yields token deltas. Used by the UI."""
-        import json
         with self._client.stream(
             "POST",
             f"{self.base_url}/api/chat",
