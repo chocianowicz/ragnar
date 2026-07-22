@@ -27,13 +27,15 @@ def test_pdf_ingested_then_answered_with_correct_citation():
         result = pipeline.ingest(Path("tests/fixtures/sample.pdf"), "doc1")
         assert result.chunk_count > 0
 
-        search = Search(embedder, store, candidates=25)
-        results = search.find("What is the service contract number?")
-        assert results
+        search = Search(embedder, store, candidates=25, top_k=5,
+                        score_floor=cfg.score_floor)
+        outcome = search.find("What is the service contract number?")
+        assert not outcome.refused
+        assert outcome.results
 
         llm = OllamaLLM(os.environ["OLLAMA_BASE_URL"], "qwen2.5:14b")
         answer = Answerer(llm).answer(
-            "What is the service contract number?", results[:5]
+            "What is the service contract number?", outcome.results
         )
 
         assert "SC-4471" in answer.text

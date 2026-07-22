@@ -13,6 +13,7 @@ from ingestion.worker import IngestWorker
 from retrieval.embedder import OllamaEmbedder
 from retrieval.store import QdrantStore
 from retrieval.search import Search
+from retrieval.reranker import BGEReranker
 from generation.llm import OllamaLLM
 from generation.prompts import SYSTEM_PROMPT, build_user_prompt
 
@@ -34,7 +35,9 @@ def build_services():
 
     return {
         "cfg": cfg, "storage": storage, "registry": registry,
-        "store": store, "search": Search(embedder, store, cfg.candidates),
+        "store": store, "search": Search(embedder, store, reranker=BGEReranker(),
+                                          candidates=cfg.candidates, top_k=cfg.top_k,
+                                          score_floor=cfg.score_floor),
         "llm": llm, "worker": worker,
     }
 
@@ -99,22 +102,33 @@ if question := st.chat_input("Ask about your documents"):
         st.markdown(question)
 
     with st.chat_message("assistant"):
-        results = svc["search"].find(question)[: svc["cfg"].top_k]
+        outcome = svc["search"].find(question)
 
-        if not results:
+        if outcome.refused:
             text = "I could not find anything relevant in the documents."
             st.markdown(text)
             citations = []
+
+            related_labels = []
+            for r in outcome.related:
+                label = r.chunk.citation_label()
+                if label not in related_labels:
+                    related_labels.append(label)
+
+            if related_labels:
+                with st.expander("Related documents you might check"):
+                    for label in related_labels:
+                        st.caption(label)
         else:
             excerpts = [(r.chunk.citation_label(), r.chunk.text)
-                        for r in results]
+                        for r in outcome.results]
             text = st.write_stream(
                 svc["llm"].stream(
                     SYSTEM_PROMPT, build_user_prompt(question, excerpts)
                 )
             )
             citations = []
-            for r in results:
+            for r in outcome.results:
                 label = r.chunk.citation_label()
                 if label not in citations:
                     citations.append(label)
