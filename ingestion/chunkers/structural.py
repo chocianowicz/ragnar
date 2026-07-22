@@ -50,7 +50,13 @@ class StructuralChunker:
             text = "\n\n".join(b.text.strip() for b in group)
             head = group[0]
 
-            for piece in self._split(text):
+            if head.is_table:
+                from ingestion.tables import chunk_table_markdown
+                pieces = chunk_table_markdown(text) or [text]
+            else:
+                pieces = self._split(text)
+
+            for piece in pieces:
                 chunks.append(Chunk(
                     doc_id=doc_id,
                     filename=filename,
