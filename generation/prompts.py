@@ -7,7 +7,8 @@ Rules:
 - Answer in the SAME LANGUAGE as the question, even when the excerpts are \
 in a different language.
 - Be concise and factual. Do not speculate or embellish.
-- Do not write citations yourself; they are attached automatically.
+- Citations are added separately after your answer — do not include your \
+own citations or source references in the response text.
 """
 
 
