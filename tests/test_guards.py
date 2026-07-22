@@ -54,3 +54,14 @@ def test_refusal_message_names_file_and_sheet():
 
 def test_empty_results_are_not_refused_by_this_guard():
     assert not should_refuse_aggregation("What is the total?", [])
+
+
+def test_word_containing_aggregation_substring_is_NOT_refused():
+    results = [_result("| Acme | 1000 |", True), _result("| Beta | 2000 |", True)]
+    assert not should_refuse_aggregation("Is the laptop covered under warranty?", results)
+    assert not should_refuse_aggregation("What is the discount policy?", results)
+
+
+def test_polish_word_containing_aggregation_substring_is_NOT_refused():
+    results = [_result("| Acme | 1000 |", True)]
+    assert not should_refuse_aggregation("Gdzie mogę kupić bilet?", results)

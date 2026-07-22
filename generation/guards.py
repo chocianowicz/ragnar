@@ -1,3 +1,5 @@
+import re
+
 from core.models import SearchResult
 
 # English and Polish aggregation intent markers.
@@ -17,7 +19,13 @@ TABLE_MAJORITY = 0.5
 
 def _has_aggregation_intent(question: str) -> bool:
     lowered = question.lower()
-    return any(term in lowered for term in AGGREGATION_TERMS)
+    for term in AGGREGATION_TERMS:
+        if " " in term:
+            if term in lowered:
+                return True
+        elif re.search(rf"\b{re.escape(term)}\b", lowered):
+            return True
+    return False
 
 
 def _is_table_heavy(results: list[SearchResult]) -> bool:
