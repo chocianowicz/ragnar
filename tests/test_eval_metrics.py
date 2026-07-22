@@ -44,3 +44,12 @@ def test_citation_accuracy_skips_out_of_corpus_cases():
          "out_of_corpus": False},
     ]
     assert citation_accuracy(cases) == 1.0
+
+
+def test_citation_accuracy_rejects_substring_filename_match():
+    cases = [{
+        "expected_sources": ["report.pdf"],
+        "citations": ["quarterly_report.pdf, p. 4"],
+        "out_of_corpus": False,
+    }]
+    assert citation_accuracy(cases) == 0.0

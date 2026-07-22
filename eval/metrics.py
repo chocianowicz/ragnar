@@ -13,6 +13,9 @@ def refusal_accuracy(cases: list[dict]) -> float:
     return correct / len(cases)
 
 
+import re
+
+
 def citation_accuracy(cases: list[dict]) -> float:
     """Did the cited document match the expected source?"""
     scored = [c for c in cases if not c["out_of_corpus"]]
@@ -22,6 +25,7 @@ def citation_accuracy(cases: list[dict]) -> float:
     correct = 0
     for case in scored:
         cited = " ".join(case["citations"])
-        if any(src in cited for src in case["expected_sources"]):
+        if any(re.search(rf"\b{re.escape(src)}\b", cited)
+               for src in case["expected_sources"]):
             correct += 1
     return correct / len(scored)
