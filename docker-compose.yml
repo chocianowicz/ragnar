@@ -9,6 +9,7 @@ services:
     environment:
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       QDRANT_URL: http://qdrant:6333
+      HF_TOKEN: ${HF_TOKEN:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

@@ -13,7 +13,14 @@ chunking:
 retrieval:
   candidates: 25
   top_k: 5
-  score_floor: 0.6       # calibrated in Task 25 via eval/run_eval.py --calibrate
+  # Was 0.6 from Task 25's calibration (only 5 golden-set cases, explicitly
+  # flagged there as not production-trustworthy). Real usage against a real
+  # uploaded corpus showed a clean gap: out-of-corpus questions scored
+  # 0.50-0.503, relevant ones (even a single vague word) scored 0.578+.
+  # 0.55 sits in that gap with margin on both sides. Still a stopgap, not a
+  # real calibration - see eval/README.md, which needs a much larger golden
+  # set before this number should be trusted.
+  score_floor: 0.55
 
 storage:
   data_dir: /app/data
