@@ -16,6 +16,7 @@ from retrieval.search import Search
 from retrieval.reranker import BGEReranker
 from generation.llm import OllamaLLM
 from generation.prompts import SYSTEM_PROMPT, build_user_prompt
+from generation.guards import should_refuse_aggregation, aggregation_refusal
 
 
 @st.cache_resource
@@ -119,6 +120,10 @@ if question := st.chat_input("Ask about your documents"):
                 with st.expander("Related documents you might check"):
                     for label in related_labels:
                         st.caption(label)
+        elif should_refuse_aggregation(question, outcome.results):
+            text = aggregation_refusal(outcome.results)
+            st.warning(text)
+            citations = []
         else:
             excerpts = [(r.chunk.citation_label(), r.chunk.text)
                         for r in outcome.results]
