@@ -11,7 +11,7 @@ WORKDIR /app
 ENV PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
 
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir -e ".[dev]"
 
 COPY . .
 
