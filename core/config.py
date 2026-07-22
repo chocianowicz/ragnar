@@ -29,6 +29,10 @@ class Config:
         return self._raw["models"]["embedding_dim"]
 
     @property
+    def reranker_model(self) -> str:
+        return self._raw["models"]["reranker"]
+
+    @property
     def collection(self) -> str:
         return self._raw["storage"]["collection"]
 

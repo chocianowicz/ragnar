@@ -40,7 +40,7 @@ def run_cases(score_floor: float | None = None) -> list[dict]:
 
     embedder = OllamaEmbedder(cfg.ollama_url, cfg.embedding_model)
     store = QdrantStore(cfg.qdrant_url, cfg.collection, cfg.embedding_dim)
-    search = Search(embedder, store, BGEReranker(),
+    search = Search(embedder, store, BGEReranker(cfg.reranker_model),
                     cfg.candidates, cfg.top_k, floor)
     answerer = Answerer(OllamaLLM(cfg.ollama_url, cfg.llm_model))
 

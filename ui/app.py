@@ -37,9 +37,10 @@ def build_services():
 
     return {
         "cfg": cfg, "storage": storage, "registry": registry,
-        "store": store, "search": Search(embedder, store, reranker=BGEReranker(),
-                                          candidates=cfg.candidates, top_k=cfg.top_k,
-                                          score_floor=cfg.score_floor),
+        "store": store, "search": Search(
+            embedder, store, reranker=BGEReranker(cfg.reranker_model),
+            candidates=cfg.candidates, top_k=cfg.top_k,
+            score_floor=cfg.score_floor),
         "llm": llm, "worker": worker,
     }
 
