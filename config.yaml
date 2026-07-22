@@ -13,7 +13,7 @@ chunking:
 retrieval:
   candidates: 25
   top_k: 5
-  score_floor: 0.0       # calibrated in Task 24; 0.0 disables the floor
+  score_floor: 0.6       # calibrated in Task 25 via eval/run_eval.py --calibrate
 
 storage:
   data_dir: /app/data
