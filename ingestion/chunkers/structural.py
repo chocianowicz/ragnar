@@ -67,6 +67,7 @@ class StructuralChunker:
                     page=head.page,
                     sheet=head.sheet,
                     is_table=head.is_table,
+                    low_confidence=parsed.low_confidence,
                 ))
                 index += 1
 

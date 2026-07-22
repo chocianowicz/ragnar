@@ -19,6 +19,21 @@ def _default_converter() -> DocumentConverter:
     })
 
 
+def _ocr_converter() -> DocumentConverter:
+    # Used as a fallback when the OCR-disabled default converter comes back
+    # with near-empty text — typically scanned/image-only PDFs.
+    options = PdfPipelineOptions()
+    options.do_ocr = True
+    return DocumentConverter(format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=options)
+    })
+
+
+# Below this density (chars of extracted text per page), we suspect the
+# extraction missed content (e.g. a scanned page) and re-parse with OCR.
+OCR_TRIGGER_CHARS_PER_PAGE = 50
+
+
 @dataclass
 class Block:
     text: str
@@ -32,6 +47,7 @@ class ParsedDocument:
     markdown: str
     blocks: list[Block] = field(default_factory=list)
     page_count: int = 0
+    low_confidence: bool = False
 
     @property
     def chars_per_page(self) -> float:
@@ -48,11 +64,23 @@ class DoclingParser:
     separate deliberately.
     """
 
-    def __init__(self, converter: DocumentConverter | None = None):
+    def __init__(self, converter: DocumentConverter | None = None,
+                 ocr_converter: DocumentConverter | None = None):
         self._converter = converter or _default_converter()
+        self._ocr_converter = ocr_converter
 
     def parse(self, path: Path) -> ParsedDocument:
-        doc = self._converter.convert(str(path)).document
+        parsed = self._parse_with(self._converter, path)
+
+        if parsed.chars_per_page < OCR_TRIGGER_CHARS_PER_PAGE:
+            ocr_converter = self._ocr_converter or _ocr_converter()
+            parsed = self._parse_with(ocr_converter, path)
+            parsed.low_confidence = True
+
+        return parsed
+
+    def _parse_with(self, converter: DocumentConverter, path: Path) -> ParsedDocument:
+        doc = converter.convert(str(path)).document
 
         blocks: list[Block] = []
         pages: set[int] = set()

@@ -91,3 +91,19 @@ def test_build_chunker_structural_applies_config():
 def test_build_chunker_fixed_returns_fixed_chunker():
     chunker = build_chunker({"strategy": "fixed"})
     assert isinstance(chunker, FixedChunker)
+
+
+def test_low_confidence_propagates_to_chunks():
+    doc = ParsedDocument(
+        markdown="x",
+        blocks=[
+            Block(text="First sentence.", page=1),
+            Block(text="Second sentence.", page=2),
+        ],
+        page_count=2,
+        low_confidence=True,
+    )
+    chunks = StructuralChunker(target_tokens=500).chunk(doc, "d", "f.pdf")
+
+    assert chunks
+    assert all(c.low_confidence for c in chunks)

@@ -30,6 +30,7 @@ class FixedChunker:
                     page=block.page,
                     sheet=block.sheet,
                     is_table=block.is_table,
+                    low_confidence=parsed.low_confidence,
                 ))
                 index += 1
                 step = self.target_chars - self.overlap_chars

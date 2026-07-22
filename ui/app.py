@@ -1,6 +1,7 @@
 import uuid
 from pathlib import Path
 
+import httpx
 import streamlit as st
 
 from core.config import Config
@@ -44,6 +45,22 @@ def build_services():
 
 
 svc = build_services()
+
+try:
+    httpx.get(f"{svc['cfg'].ollama_url}/api/tags", timeout=5).raise_for_status()
+except Exception:
+    st.error(
+        f"Cannot reach Ollama at {svc['cfg'].ollama_url}.\n\n"
+        "Start it with `ollama serve`, then confirm the models are present:\n"
+        "`ollama pull qwen2.5:14b` and `ollama pull bge-m3`."
+    )
+    if st.button("Recheck"):
+        st.rerun()
+    st.stop()
+
+if not svc["registry"].all():
+    st.info("No documents indexed yet. Upload one to get started.")
+
 st.title("Ragnar")
 
 with st.sidebar:
@@ -83,6 +100,17 @@ with st.sidebar:
             st.write(f"{icon} {doc.filename}")
             if doc.error:
                 st.caption(f"↳ {doc.error}")
+
+            if doc.status.value == "done":
+                with st.expander(f"View {doc.filename}"):
+                    markdown = svc["storage"].read_markdown(doc.doc_id)
+                    st.markdown(markdown or "_Not yet converted_")
+
+            if st.button("Remove", key=f"rm_{doc.doc_id}"):
+                svc["store"].delete_by_doc(doc.doc_id)
+                svc["storage"].remove_converted(doc.doc_id)
+                svc["registry"].remove(doc.doc_id)
+                st.rerun()
 
     status_strip()
 
