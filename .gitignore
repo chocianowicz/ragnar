@@ -15,3 +15,7 @@ build/
 # runtime data
 data/
 .env
+
+# eval reports can contain full chunk text from whatever corpus was
+# evaluated - never commit real document content
+eval/reports/
