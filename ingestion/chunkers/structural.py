@@ -11,9 +11,11 @@ class StructuralChunker:
     """Merges adjacent blocks up to a token budget, never crossing pages,
     never mixing tables with prose."""
 
-    def __init__(self, target_tokens: int = 500, overlap_tokens: int = 50):
+    def __init__(self, target_tokens: int = 500, overlap_tokens: int = 50,
+                 rows_per_group: int = 20):
         self.target_chars = int(target_tokens * CHARS_PER_TOKEN)
         self.overlap_chars = int(overlap_tokens * CHARS_PER_TOKEN)
+        self.rows_per_group = rows_per_group
 
     def chunk(self, parsed: ParsedDocument, doc_id: str,
               filename: str) -> list[Chunk]:
@@ -52,7 +54,7 @@ class StructuralChunker:
 
             if head.is_table:
                 from ingestion.tables import chunk_table_markdown
-                pieces = chunk_table_markdown(text) or [text]
+                pieces = chunk_table_markdown(text, rows_per_group=self.rows_per_group) or [text]
             else:
                 pieces = self._split(text)
 

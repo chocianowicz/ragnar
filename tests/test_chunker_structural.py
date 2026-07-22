@@ -51,6 +51,26 @@ def test_table_blocks_are_never_merged_with_prose():
     assert "Intro prose" not in table_chunks[0].text
 
 
+def test_table_rows_per_group_config_is_applied():
+    table_text = (
+        "| Client | Region | Value |\n"
+        "|---|---|---|\n"
+        "| A | North | 1000 |\n"
+        "| B | South | 2000 |\n"
+        "| C | East | 3000 |\n"
+        "| D | West | 4000 |"
+    )
+    doc = _doc([Block(text=table_text, page=1, is_table=True)])
+    chunker = build_chunker({"strategy": "structural", "table_rows_per_group": 2})
+    chunks = chunker.chunk(doc, "d", "f.pdf")
+
+    # With rows_per_group=2 and 4 data rows, we expect 2 table chunks
+    assert len(chunks) == 2
+    for chunk in chunks:
+        assert chunk.is_table
+        assert "| Client | Region | Value |" in chunk.text
+
+
 def test_chunk_indices_are_sequential():
     doc = _doc([Block(text=f"Block {i}.", page=i) for i in range(1, 6)])
     chunks = StructuralChunker().chunk(doc, "d", "f.pdf")

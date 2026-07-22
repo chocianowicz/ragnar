@@ -23,4 +23,5 @@ def build_chunker(config: dict):
     return StructuralChunker(
         target_tokens=config.get("target_tokens", 500),
         overlap_tokens=config.get("overlap_tokens", 50),
+        rows_per_group=config.get("table_rows_per_group", 20),
     )
