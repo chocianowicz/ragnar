@@ -2,3 +2,20 @@
 
 # macOS
 .DS_Store
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+dist/
+build/
+*.egg-info/
+
+# runtime data
+data/
+.env
+
+# eval reports can contain full chunk text from whatever corpus was
+# evaluated - never commit real document content
+eval/reports/

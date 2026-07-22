@@ -1,0 +1,53 @@
+import pytest
+import uuid
+from core.models import Chunk
+from retrieval.store import QdrantStore
+
+
+@pytest.fixture
+def store():
+    import os
+    name = f"test_{uuid.uuid4().hex[:8]}"
+    s = QdrantStore(os.environ["QDRANT_URL"], name, dim=1024)
+    s.ensure_collection()
+    yield s
+    s.drop_collection()
+
+
+def _chunk(doc_id, text, index=0, page=1):
+    return Chunk(doc_id=doc_id, filename="f.pdf", text=text,
+                 chunk_index=index, page=page)
+
+
+@pytest.mark.integration
+def test_store_roundtrips_chunk_and_payload(store):
+    store.upsert([_chunk("d1", "hello")], [[0.1] * 1024])
+
+    results = store.search([0.1] * 1024, limit=5)
+
+    assert len(results) == 1
+    assert results[0].chunk.text == "hello"
+    assert results[0].chunk.page == 1
+    assert results[0].chunk.doc_id == "d1"
+
+
+@pytest.mark.integration
+def test_delete_by_doc_removes_only_that_document(store):
+    store.upsert(
+        [_chunk("d1", "keep"), _chunk("d2", "remove", index=1)],
+        [[0.1] * 1024, [0.2] * 1024],
+    )
+
+    store.delete_by_doc("d2")
+    results = store.search([0.1] * 1024, limit=10)
+
+    assert [r.chunk.doc_id for r in results] == ["d1"]
+
+
+@pytest.mark.integration
+def test_reupsert_same_chunk_does_not_duplicate(store):
+    chunk = _chunk("d1", "v1")
+    store.upsert([chunk], [[0.1] * 1024])
+    store.upsert([chunk], [[0.1] * 1024])
+
+    assert len(store.search([0.1] * 1024, limit=10)) == 1
