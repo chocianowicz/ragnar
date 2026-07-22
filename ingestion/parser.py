@@ -73,8 +73,9 @@ class DoclingParser:
         parsed = self._parse_with(self._converter, path)
 
         if parsed.chars_per_page < OCR_TRIGGER_CHARS_PER_PAGE:
-            ocr_converter = self._ocr_converter or _ocr_converter()
-            parsed = self._parse_with(ocr_converter, path)
+            if self._ocr_converter is None:
+                self._ocr_converter = _ocr_converter()
+            parsed = self._parse_with(self._ocr_converter, path)
             parsed.low_confidence = True
 
         return parsed
