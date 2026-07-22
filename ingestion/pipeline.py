@@ -1,4 +1,11 @@
+from dataclasses import dataclass
 from pathlib import Path
+
+
+@dataclass
+class IngestResult:
+    chunk_count: int
+    markdown: str
 
 
 class Pipeline:
@@ -10,15 +17,16 @@ class Pipeline:
         self._embedder = embedder
         self._store = store
 
-    def ingest(self, path: Path, doc_id: str) -> int:
+    def ingest(self, path: Path, doc_id: str) -> IngestResult:
         parsed = self._parser.parse(path)
         chunks = self._chunker.chunk(parsed, doc_id, path.name)
-        if not chunks:
-            return 0
 
         # Replace wholesale so stale and fresh chunks never coexist.
         self._store.delete_by_doc(doc_id)
 
-        vectors = self._embedder.embed([c.text for c in chunks])
-        self._store.upsert(chunks, vectors)
-        return len(chunks)
+        if chunks:
+            vectors = self._embedder.embed([c.text for c in chunks])
+            self._store.upsert(chunks, vectors)
+
+        return IngestResult(chunk_count=len(chunks),
+                            markdown=parsed.markdown)

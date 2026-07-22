@@ -23,8 +23,8 @@ def test_pdf_ingested_then_answered_with_correct_citation():
 
     try:
         pipeline = Pipeline(DoclingParser(), FixedChunker(), embedder, store)
-        count = pipeline.ingest(Path("tests/fixtures/sample.pdf"), "doc1")
-        assert count > 0
+        result = pipeline.ingest(Path("tests/fixtures/sample.pdf"), "doc1")
+        assert result.chunk_count > 0
 
         search = Search(embedder, store, candidates=25)
         results = search.find("What is the service contract number?")
