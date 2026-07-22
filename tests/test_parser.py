@@ -21,3 +21,12 @@ def test_parser_reports_text_density_for_ocr_decision():
     parsed = DoclingParser().parse(FIXTURE)
     # native-text PDF — well above the OCR trigger threshold
     assert parsed.chars_per_page > 50
+
+
+def test_default_converter_has_ocr_disabled():
+    from ingestion.parser import _default_converter
+    from docling.datamodel.base_models import InputFormat
+
+    converter = _default_converter()
+    pdf_options = converter.format_to_options[InputFormat.PDF]
+    assert pdf_options.pipeline_options.do_ocr is False

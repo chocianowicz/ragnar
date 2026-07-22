@@ -64,7 +64,7 @@ class DoclingParser:
 
             page = None
             prov = getattr(item, "prov", None)
-            if prov:
+            if prov and isinstance(prov, (list, tuple)):
                 page = getattr(prov[0], "page_no", None)
             if page is not None:
                 pages.add(page)
