@@ -45,6 +45,25 @@ def build_services():
     }
 
 
+def format_eta(seconds: float | None) -> str:
+    """A rough, human-friendly ' · ~N min remaining' suffix, or '' if unknown.
+
+    Kept deliberately coarse — the estimate is approximate, so second-level
+    precision would imply accuracy it doesn't have.
+    """
+    if seconds is None:
+        return ""
+    s = int(round(seconds))
+    if s < 45:
+        return " · finishing up"
+    mins = max(round(s / 60), 1)
+    if mins < 60:
+        return f" · ~{mins} min remaining"
+    hrs, rem = divmod(mins, 60)
+    return (f" · ~{hrs} hr {rem} min remaining" if rem
+            else f" · ~{hrs} hr remaining")
+
+
 @st.cache_data(ttl=30)
 def list_chat_models(ollama_url: str, exclude: str) -> list[str]:
     """Chat-capable models pulled in Ollama, excluding the embedding model."""
@@ -196,7 +215,8 @@ with st.sidebar:
             for file in uploaded:
                 target = svc["storage"].inbox / file.name
                 target.write_bytes(file.getbuffer())
-                svc["registry"].add(svc["storage"].doc_id(target), file.name)
+                svc["registry"].add(svc["storage"].doc_id(target), file.name,
+                                    target.stat().st_size)
             # Force the uploader widget to reset to empty on the next render.
             st.session_state.uploader_key += 1
             st.rerun()
@@ -215,18 +235,20 @@ with st.sidebar:
             )
             if st.button("Ingest inbox"):
                 for path in externally_dropped:
-                    svc["registry"].add(svc["storage"].doc_id(path), path.name)
+                    svc["registry"].add(svc["storage"].doc_id(path), path.name,
+                                        path.stat().st_size)
                 st.success(f"Queued {len(externally_dropped)} file(s)")
                 st.rerun()
 
         @st.fragment(run_every="2s")
         def status_strip():
-            counts = svc["registry"].counts()
-            processing = counts.get("processing", 0)
-            queued = counts.get("queued", 0)
+            processing, queued, eta = svc["registry"].ingest_eta()
 
             if processing or queued:
-                st.info(f"Indexing — {processing} in progress, {queued} queued")
+                st.info(
+                    f"Indexing — {processing} in progress, "
+                    f"{queued} queued{format_eta(eta)}"
+                )
 
             docs = svc["registry"].all()
 
