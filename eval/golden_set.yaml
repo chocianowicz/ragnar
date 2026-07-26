@@ -1,0 +1,34 @@
+# Hand-written evaluation cases against the real corpus.
+# Target ~30-50 entries, roughly a quarter with out_of_corpus: true.
+#
+# The out-of-corpus entries are what make the similarity floor tunable.
+# Without them you can measure whether good answers are correct, but not
+# whether bad questions get refused - and the refusal path is the whole
+# trust story.
+
+- question: "What is the service contract number?"
+  expected_answer: "SC-4471"
+  expected_sources: ["sample.pdf"]
+  out_of_corpus: false
+
+- question: "Who escalates critical faults?"
+  expected_answer: "The duty engineer."
+  expected_sources: ["sample.pdf"]
+  out_of_corpus: false
+
+- question: "Jaki jest numer kontraktu serwisowego?"
+  expected_answer: "SC-4471"
+  expected_sources: ["sample.pdf"]
+  out_of_corpus: false
+
+# --- out of corpus: must be refused ---
+
+- question: "What is the capital of France?"
+  expected_answer: ""
+  expected_sources: []
+  out_of_corpus: true
+
+- question: "What is our 2025 marketing budget?"
+  expected_answer: ""
+  expected_sources: []
+  out_of_corpus: true
