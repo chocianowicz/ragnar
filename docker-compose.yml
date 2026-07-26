@@ -1,6 +1,12 @@
 services:
   app:
     build: .
+    # Auto-recover if the process is killed (e.g. Docker Desktop VM memory
+    # pressure sends SIGKILL -> exit 137). Without this the app stays dead
+    # and the browser shows "Is Streamlit still running?". "unless-stopped"
+    # revives it on crash and on Docker/host restart, but respects a
+    # deliberate `docker compose stop`.
+    restart: unless-stopped
     ports:
       - "8501:8501"
     volumes:
@@ -17,6 +23,7 @@ services:
 
   qdrant:
     image: qdrant/qdrant:latest
+    restart: unless-stopped
     ports:
       - "6333:6333"
     volumes:
