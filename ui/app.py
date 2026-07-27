@@ -1,7 +1,10 @@
+import uuid
+
 import httpx
 import streamlit as st
 
 from core.config import Config
+from history.chat_store import ChatStore, chat_title
 from ingestion.parser import DoclingParser
 from ingestion.chunkers.registry import build_chunker
 from ingestion.chunkers.structural import StructuralChunker
@@ -25,6 +28,7 @@ def build_services():
     cfg = Config()
     storage = Storage(cfg.data_dir)
     registry = Registry(cfg.data_dir / "registry.db")
+    chats = ChatStore(cfg.data_dir / "chats.db")
 
     embedder = OllamaEmbedder(cfg.ollama_url, cfg.embedding_model)
     store = QdrantStore(cfg.qdrant_url, cfg.collection, cfg.embedding_dim)
@@ -37,6 +41,7 @@ def build_services():
 
     return {
         "cfg": cfg, "storage": storage, "registry": registry,
+        "chats": chats,
         "store": store, "pipeline": pipeline, "search": Search(
             embedder, store, reranker=BGEReranker(cfg.reranker_model),
             candidates=cfg.candidates, top_k=cfg.top_k,
@@ -97,7 +102,8 @@ except Exception:
 
 SIDEBAR_HEADER_CSS = """
 <style>
-[class*="st-key-remove_container_"] button:hover {
+[class*="st-key-remove_container_"] button:hover,
+[class*="st-key-del_chat_container_"] button:hover {
     background-color: #ff4b4b !important;
     color: white !important;
     border-color: #ff4b4b !important;
@@ -308,6 +314,39 @@ with st.sidebar:
 
         status_strip()
 
+    with st.expander("Chats", expanded=False):
+        # Conversations auto-save as they happen; this panel is for revisiting
+        # and managing them. "New chat" just clears the working conversation -
+        # the previous one is already persisted, so nothing is lost.
+        if st.button("New chat", use_container_width=True):
+            st.session_state.messages = []
+            st.session_state.current_chat_id = None
+            st.rerun()
+
+        saved_chats = svc["chats"].all()
+        if not saved_chats:
+            st.caption("No saved chats yet — ask a question to start one.")
+
+        for chat in saved_chats:
+            is_current = chat.chat_id == st.session_state.get("current_chat_id")
+            col_open, col_del = st.columns([5, 1])
+            with col_open:
+                label = ("▸ " if is_current else "") + chat.title
+                if st.button(label, key=f"open_chat_{chat.chat_id}",
+                             use_container_width=True):
+                    st.session_state.messages = chat.messages
+                    st.session_state.current_chat_id = chat.chat_id
+                    st.rerun()
+            with col_del:
+                with st.container(key=f"del_chat_container_{chat.chat_id}"):
+                    if st.button("✕", key=f"del_chat_{chat.chat_id}",
+                                 help="Delete this chat"):
+                        svc["chats"].delete(chat.chat_id)
+                        if is_current:
+                            st.session_state.messages = []
+                            st.session_state.current_chat_id = None
+                        st.rerun()
+
 all_docs = svc["registry"].all()
 if not all_docs:
     st.info("No documents indexed yet. Upload one to get started.")
@@ -326,6 +365,8 @@ doc_ids_filter = (
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
+# None until the current conversation has been saved for the first time.
+st.session_state.setdefault("current_chat_id", None)
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
@@ -374,3 +415,16 @@ if question := st.chat_input("Ask about your documents"):
     st.session_state.messages.append(
         {"role": "assistant", "content": text, "citations": citations}
     )
+
+    # Persist the conversation. Mint an id on first save so a chat only
+    # appears in the list once it actually has content. Rerun so the newly
+    # saved/updated chat shows in the Chats panel immediately (the sidebar
+    # renders above this handler, so it hasn't seen the save yet this run).
+    if st.session_state.current_chat_id is None:
+        st.session_state.current_chat_id = uuid.uuid4().hex
+    svc["chats"].save(
+        st.session_state.current_chat_id,
+        chat_title(st.session_state.messages),
+        st.session_state.messages,
+    )
+    st.rerun()

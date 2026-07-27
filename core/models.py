@@ -42,3 +42,18 @@ class Document:
 class SearchResult:
     chunk: Chunk
     score: float
+
+
+@dataclass
+class SavedChat:
+    """A persisted conversation.
+
+    `messages` mirrors the Streamlit chat history: a list of
+    {"role", "content", "citations"} dicts, kept as plain dicts so it
+    round-trips through JSON without a bespoke schema.
+    """
+    chat_id: str
+    title: str
+    messages: list[dict]
+    created_at: float
+    updated_at: float
