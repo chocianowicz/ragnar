@@ -9,13 +9,16 @@ class StubLLM:
     def __init__(self, reply="Contract number is SC-4471."):
         self.reply = reply
         self.prompts = []
+        self.opts = []
 
-    def generate(self, system, user):
+    def generate(self, system, user, *, model=None, temperature=None):
         self.prompts.append((system, user))
+        self.opts.append((model, temperature))
         return self.reply
 
-    def stream(self, system, user):
+    def stream(self, system, user, *, model=None, temperature=None):
         self.prompts.append((system, user))
+        self.opts.append((model, temperature))
         yield self.reply
 
 
@@ -96,6 +99,17 @@ def test_stream_yields_answer_and_uses_source_labels():
     assert "".join(chunks) == "streamed answer"
     _system, user = llm.prompts[0]
     assert "a.pdf, p. 7" in user and "body text" in user
+
+
+def test_per_request_model_and_temperature_are_threaded_to_the_llm():
+    llm = StubLLM()
+    Answerer(llm).answer("q", [_result("a.pdf", 1, "x")],
+                         model="llama3", temperature=0.7)
+    assert llm.opts[0] == ("llama3", 0.7)
+
+    list(Answerer(llm).stream("q", [_result("a.pdf", 1, "x")],
+                              model="qwen", temperature=0.2))
+    assert llm.opts[1] == ("qwen", 0.2)
 
 
 # --- classify: the shared refuse / guard / answer policy ---------------------

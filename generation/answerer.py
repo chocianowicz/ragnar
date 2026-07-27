@@ -61,24 +61,30 @@ class Answerer:
     def __init__(self, llm):
         self._llm = llm
 
-    def answer(self, question: str,
-               results: list[SearchResult]) -> Answer:
+    def answer(self, question: str, results: list[SearchResult], *,
+               model: str | None = None,
+               temperature: float | None = None) -> Answer:
         if not results:
             # Skip the model entirely — a refusal it cannot embellish.
             return Answer(text=NO_RESULTS_MESSAGE, refused=True)
 
         text = self._llm.generate(
-            SYSTEM_PROMPT, build_user_prompt(question, build_excerpts(results))
+            SYSTEM_PROMPT, build_user_prompt(question, build_excerpts(results)),
+            model=model, temperature=temperature,
         )
 
         return Answer(text=text, citations=citation_labels(results))
 
-    def stream(self, question: str, results: list[SearchResult]):
+    def stream(self, question: str, results: list[SearchResult], *,
+               model: str | None = None, temperature: float | None = None):
         """Yield answer-text deltas for the UI's st.write_stream.
 
         Citations are not part of the stream — they come from
         citation_labels(results) and are known before generation starts.
+        model/temperature are threaded through per call so a shared Answerer
+        instance never has to mutate the underlying LLM's state.
         """
         yield from self._llm.stream(
-            SYSTEM_PROMPT, build_user_prompt(question, build_excerpts(results))
+            SYSTEM_PROMPT, build_user_prompt(question, build_excerpts(results)),
+            model=model, temperature=temperature,
         )

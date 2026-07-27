@@ -42,6 +42,19 @@ def test_temperature_is_settable_and_sent_in_request():
     assert client.calls[0]["options"]["temperature"] == 0.7
 
 
+def test_per_call_model_and_temperature_override_instance_defaults():
+    client = StubClient({"message": {"content": "ok"}})
+    llm = OllamaLLM("http://x", "default-model", client=client)
+
+    llm.generate("sys", "user", model="other-model", temperature=0.9)
+
+    assert client.calls[0]["model"] == "other-model"
+    assert client.calls[0]["options"]["temperature"] == 0.9
+    # Instance defaults are untouched — nothing was mutated.
+    assert llm.model == "default-model"
+    assert llm.temperature == 0.0
+
+
 @pytest.mark.integration
 def test_llm_answers_from_context_only():
     import os

@@ -130,3 +130,36 @@ def test_find_with_empty_doc_ids_refuses_without_reranker_call():
     outcome = search.find("q", doc_ids=[])
 
     assert outcome.refused is True
+
+
+def test_per_request_score_floor_overrides_the_instance_default():
+    # Instance floor 0.8 would refuse a 0.5 result; a per-call 0.3 keeps it,
+    # without mutating the shared instance.
+    search = Search(
+        FakeEmbedder(), StubStore([_result("x")]),
+        reranker=StubReranker([0.5]), candidates=25, top_k=5,
+        score_floor=0.8,
+    )
+    assert search.find("q").refused is True
+    assert search.find("q", score_floor=0.3).refused is False
+    assert search.score_floor == 0.8  # unchanged
+
+
+def test_disabling_the_reranker_returns_top_candidates_without_the_floor():
+    # Reranker would score this 0.05 (below floor) and refuse; with reranking
+    # off, the floor is bypassed and the top candidate comes straight back.
+    reranker = StubReranker([0.05])
+    search = Search(
+        FakeEmbedder(), StubStore([_result("a")]),
+        reranker=reranker, candidates=25, top_k=5, score_floor=0.3,
+    )
+    assert search.find("q").refused is True
+    outcome = search.find("q", use_reranker=False)
+    assert outcome.refused is False
+    assert len(outcome.results) == 1
+
+
+def test_disabling_the_reranker_still_refuses_an_empty_corpus():
+    search = Search(FakeEmbedder(), StubStore([]),
+                    reranker=StubReranker([]), score_floor=0.3)
+    assert search.find("q", use_reranker=False).refused is True

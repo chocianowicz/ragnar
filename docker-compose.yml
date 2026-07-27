@@ -10,7 +10,8 @@ services:
     ports:
       - "8501:8501"
     volumes:
-      - ./data:/app/data
+      # Bind-mount the whole repo for live code reload during development;
+      # this already includes ./data, so no separate data mount is needed.
       - ./:/app
     environment:
       OLLAMA_BASE_URL: http://host.docker.internal:11434
