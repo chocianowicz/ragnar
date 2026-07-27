@@ -117,7 +117,7 @@ div[data-testid="stExpander"] summary p {
 """
 
 with st.sidebar:
-    st.title("ragnar - local RAG chat app")
+    st.title("RAGnar - local RAG chat app")
     st.markdown(SIDEBAR_HEADER_CSS, unsafe_allow_html=True)
 
     with st.expander("Settings", expanded=False):
