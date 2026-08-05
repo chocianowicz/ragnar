@@ -5,10 +5,15 @@ models:
   reranker: BAAI/bge-reranker-v2-m3
 
 chunking:
-  strategy: structural   # fixed | structural
+  strategy: structural   # fixed | structural | semantic
   target_tokens: 500
   overlap_tokens: 50
   table_rows_per_group: 20
+  # Semantic strategy only: how large a similarity drop between consecutive
+  # sentences counts as a topic boundary, as a percentile of the document's
+  # own drops. Higher = fewer, larger chunks. Overlap does not apply to this
+  # strategy — cuts are chosen to land on topic boundaries.
+  semantic_breakpoint_percentile: 95
 
 retrieval:
   candidates: 25

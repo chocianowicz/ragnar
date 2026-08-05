@@ -14,6 +14,23 @@ class FakeEmbedder:
         ]
 
 
+class ScriptedEmbedder:
+    """Maps exact text to a caller-supplied vector.
+
+    FakeEmbedder's hash-derived vectors carry no controllable notion of
+    similarity, so semantic chunker tests — which need a known similarity
+    cliff between specific sentences — script the vector per text instead.
+    """
+
+    def __init__(self, vectors: dict[str, list[float]]):
+        self.vectors = vectors
+        self.calls: list[list[str]] = []
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        self.calls.append(list(texts))
+        return [self.vectors[t] for t in texts]
+
+
 class FakeStore:
     def __init__(self):
         self.chunks: list[Chunk] = []

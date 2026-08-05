@@ -1,24 +1,33 @@
 import streamlit as st
 
-from ingestion.chunkers.structural import StructuralChunker
+from ingestion.chunkers.registry import build_chunker
 from ui.services import list_chat_models
 
+# `fixed` is deliberately not offered here — it's a Phase 1 relic that emits
+# no table summaries, a knowingly worse choice for anyone clicking through
+# the UI. It stays reachable via config.yaml for eval comparisons.
+_STRATEGIES = {"Structural": "structural", "Semantic": "semantic"}
 
-def _apply_chunker(svc, chunk_size: int, overlap_pct: int,
+
+def _apply_chunker(svc, strategy: str, chunk_size: int, overlap_pct: int,
                    table_rows: int) -> None:
     """Point the ingestion pipeline at the current chunk settings.
 
     Only rebuilds the chunker when the settings actually changed — this runs
-    on every rerun, and constructing a StructuralChunker each time would be
-    needless churn.
+    on every rerun, and reconstructing a chunker each time would be needless
+    churn.
     """
-    cfg = (chunk_size, overlap_pct, table_rows)
+    cfg = (strategy, chunk_size, overlap_pct, table_rows)
     if st.session_state.get("_applied_chunk_cfg") == cfg:
         return
-    svc["pipeline"].set_chunker(StructuralChunker(
-        target_tokens=chunk_size,
-        overlap_tokens=round(chunk_size * overlap_pct / 100),
-        rows_per_group=table_rows,
+    svc["pipeline"].set_chunker(build_chunker(
+        {
+            "strategy": strategy,
+            "target_tokens": chunk_size,
+            "overlap_tokens": round(chunk_size * overlap_pct / 100),
+            "table_rows_per_group": table_rows,
+        },
+        embedder=svc["embedder"],
     ))
     st.session_state["_applied_chunk_cfg"] = cfg
 
@@ -68,6 +77,27 @@ def render(svc) -> dict:
         )
 
         st.markdown("**Chunking**")
+        default_strategy = cfg.chunking.get("strategy", "structural")
+        strategy_labels = list(_STRATEGIES)
+        default_label = next(
+            (label for label, value in _STRATEGIES.items()
+             if value == default_strategy),
+            "Structural",
+        )
+        strategy_label = st.selectbox(
+            "Chunking strategy", options=strategy_labels,
+            index=strategy_labels.index(default_label),
+            help="Structural follows the document's own headings, pages, "
+                 "and tables — the default, and the stronger choice when a "
+                 "document is cleanly parsed. Semantic instead finds topic "
+                 "shifts by meaning (embedding each sentence), which may "
+                 "suit scanned or heading-poor documents better. This is "
+                 "here to be compared on your corpus, not a permanent "
+                 "either/or.",
+        )
+        strategy = _STRATEGIES[strategy_label]
+        is_semantic = strategy == "semantic"
+
         default_tokens = cfg.chunking.get("target_tokens", 500)
         default_overlap_pct = round(
             100 * cfg.chunking.get("overlap_tokens", 50) / default_tokens
@@ -75,10 +105,18 @@ def render(svc) -> dict:
         chunk_size = st.number_input(
             "Chunk size (tokens)", min_value=100, max_value=2000,
             value=default_tokens, step=50,
+            help="Semantic chunking treats this as a hard ceiling, not a "
+                 "target — cuts are placed at topic boundaries and only "
+                 "forced by size if a topic runs long." if is_semantic else None,
         )
         overlap_pct = st.number_input(
             "Overlap (%)", min_value=0, max_value=50,
             value=default_overlap_pct, step=1,
+            disabled=is_semantic,
+            help="Not used by semantic chunking — its cuts are chosen to "
+                 "land on topic boundaries, and overlapping across a "
+                 "boundary picked that way would defeat the point."
+                 if is_semantic else None,
         )
         st.caption(
             "Chunk size and overlap apply to text only. Tables (PDF tables "
@@ -98,9 +136,9 @@ def render(svc) -> dict:
             "already indexed keep the chunking they were ingested with."
         )
 
-        _apply_chunker(svc, chunk_size, overlap_pct, table_rows)
+        _apply_chunker(svc, strategy, chunk_size, overlap_pct, table_rows)
 
-        if st.button("Re-chunk all documents at the current size"):
+        if st.button("Re-chunk all documents at the current settings"):
             requeued = missing = 0
             for doc in svc["registry"].all():
                 if doc.status.value != "done":

@@ -35,14 +35,16 @@ def build_services():
     store.ensure_collection()
     llm = OllamaLLM(cfg.ollama_url, cfg.llm_model)
 
-    pipeline = Pipeline(DoclingParser(), build_chunker(cfg.chunking),
-                        embedder, store)
+    pipeline = Pipeline(
+        DoclingParser(), build_chunker(cfg.chunking, embedder=embedder),
+        embedder, store)
     worker = IngestWorker(storage, registry, pipeline)
     worker.start()   # resets stale PROCESSING rows on startup
 
     return {
         "cfg": cfg, "storage": storage, "registry": registry, "chats": chats,
-        "store": store, "pipeline": pipeline, "search": Search(
+        "store": store, "pipeline": pipeline, "embedder": embedder,
+        "search": Search(
             embedder, store, reranker=BGEReranker(cfg.reranker_model),
             candidates=cfg.candidates, top_k=cfg.top_k,
             score_floor=cfg.score_floor),

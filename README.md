@@ -35,7 +35,9 @@ You drag a PDF into the sidebar and ask a question. In between, RAGnar:
    scanned document still works, without making every native-text PDF pay for it.
 2. **Chunks it structurally** — grouped by heading, never split across a page
    boundary. Tables are chunked by row group with the header row repeated in each
-   one, so no chunk is a headerless fragment nobody can read.
+   one, so no chunk is a headerless fragment nobody can read. A semantic strategy is
+   also selectable, cutting on meaning instead of headings — better suited to
+   scanned or heading-poor documents, worth comparing on your own corpus.
 3. **Embeds and stores** — BGE-M3 vectors in Qdrant.
 4. **Retrieves and narrows** — 25 candidates, reranked by a cross-encoder down to 5,
    then measured against a similarity floor.
@@ -68,7 +70,7 @@ A browser tab at `localhost:8501`. One chat, three collapsed panels, nothing els
 
 **Documents** takes the upload and shows what has been ingested. **Chats** keeps past
 conversations. **Settings** exposes the knobs that are worth turning — model,
-temperature, reranker, similarity floor, chunk size.
+temperature, reranker, similarity floor, chunking strategy, chunk size.
 
 Ingestion runs in the background with an estimated time remaining, so a slow scan of a
 200-page PDF doesn't block the chat you're already having.
