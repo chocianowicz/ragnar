@@ -89,7 +89,8 @@ RAGnar decides whether it *can* answer before the model is involved:
 question
    └─▶ embed ─▶ retrieve 25 ─▶ rerank ─▶ top 5
                                           │
-        best score below 0.55? ──yes──▶ refuse, and list related documents
+   rerank score below 0.55 AND ──yes──▶ refuse, and list related documents
+   vector score below 0.42?               │
                                           │
      aggregation words + mostly ──yes──▶ refuse, and name the file and sheet
      table chunks?                        │
@@ -97,6 +98,12 @@ question
                                           ▼
                             answer, cited from the chunks actually used
 ```
+
+A chunk only needs to clear *one* of the two floors. The reranker scores
+markdown table rows as near-neutral (~0.50) against natural-language
+questions regardless of relevance, so the raw embedding-similarity score is
+a second signal that rescues genuinely relevant tabular content the
+reranker has no opinion on.
 
 Three things follow:
 
@@ -165,7 +172,7 @@ Ollama has to run natively on the host rather than in a container, because Docke
 macOS cannot reach the GPU:
 
 ```bash
-ollama pull qwen2.5:14b
+ollama pull qwen2.5:3b
 ollama pull bge-m3
 
 cp .env.example .env      # optional: HF_TOKEN silences a rate-limit warning
@@ -187,17 +194,19 @@ The panel exposes what is worth changing per question; `config.yaml` holds the d
 
 | Setting | Default | What it changes |
 |---|---|---|
-| Model | `qwen2.5:14b` | Which local model writes the answer |
+| Model | `qwen2.5:3b` | Which local model writes the answer |
 | Temperature | low | Higher wanders further from the excerpts |
 | Reranker | on | Off is faster and noticeably less precise |
-| Similarity floor | `0.55` | Below this, refuse instead of answering |
+| Similarity floor | `0.55` | Rerank score below this AND vector floor below its own → refuse |
+| Vector floor | `0.42` | Second, more lenient check on raw embedding similarity |
 | Chunk size | 500 tokens | Target size per chunk, 50-token overlap |
 | Table rows per group | 20 | Rows per table chunk, header repeated in each |
 
-The floor is the one to understand before touching. It is a **stopgap, not a
-calibration**: on a real corpus, out-of-corpus questions scored 0.50–0.503 and relevant
-ones 0.578 and up, so 0.55 sits in the gap with margin either side. That is five data
-points, not a golden set. Lower it and refusals turn into confident guesses.
+The floors are the ones to understand before touching. Both are **stopgaps, not a
+calibration**: on a real corpus, out-of-corpus questions scored 0.50–0.503 on the
+reranker and relevant prose scored 0.578 and up, so 0.55 sits in that gap with margin
+either side. That is five data points, not a golden set. A chunk is refused only when
+*both* floors miss — lower either one and refusals turn into confident guesses.
 
 ---
 
@@ -225,14 +234,15 @@ points, not a golden set. Lower it and refusals turn into confident guesses.
 
 | Key | Default | Notes |
 |---|---|---|
-| `models.llm` | `qwen2.5:14b` | Answer generation, via Ollama |
+| `models.llm` | `qwen2.5:3b` | Answer generation, via Ollama |
 | `models.embedding` | `bge-m3` | 1024-dimensional vectors |
 | `models.reranker` | `BAAI/bge-reranker-v2-m3` | Cross-encoder, downloaded once |
 | `chunking.target_tokens` | `500` | 50-token overlap |
 | `chunking.table_rows_per_group` | `20` | Header repeated per group |
 | `retrieval.candidates` | `25` | Fetched before reranking |
 | `retrieval.top_k` | `5` | Kept after reranking |
-| `retrieval.score_floor` | `0.55` | Below this, refuse |
+| `retrieval.score_floor` | `0.55` | Rerank-score floor |
+| `retrieval.vector_floor` | `0.42` | Vector-similarity floor — either clearing its own floor keeps a chunk |
 
 Environment (`.env`):
 
@@ -250,8 +260,8 @@ Tracked rather than glossed over:
 
 - **Excel is designed for but under-tested.** Citations carry a sheet field and tables
   get their own chunking, but no `.xlsx` fixture exists in the test suite yet.
-- **The similarity floor is hand-tuned**, not calibrated — see `eval/README.md`. It
-  needs a much larger golden set before the number deserves trust.
+- **Both floors are hand-tuned**, not calibrated — see `eval/README.md`. They
+  need a much larger golden set before the numbers deserve trust.
 - **No recovery path if the vector store is lost.** Re-embedding from the converted
   document cache is designed for and not implemented.
 
@@ -263,8 +273,8 @@ why it is slow and why it catches integration breakage that mocks would hide.
 ## Requirements
 
 Docker Desktop, and [Ollama](https://ollama.com/) running natively on the host with
-`qwen2.5:14b` and `bge-m3` pulled. Apple Silicon is the tested configuration; the 14B
-model wants real memory, and the reranker adds a one-time download on first run.
+`qwen2.5:3b` and `bge-m3` pulled. Apple Silicon is the tested configuration; the
+reranker adds a one-time download on first run.
 
 `eval/` is deliberately isolated from the running app and never imported by it — the
 evaluation harness cannot change the behaviour it is measuring.

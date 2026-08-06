@@ -48,7 +48,7 @@ def build_services():
         "search": Search(
             embedder, store, reranker=BGEReranker(cfg.reranker_model),
             candidates=cfg.candidates, top_k=cfg.top_k,
-            score_floor=cfg.score_floor),
+            score_floor=cfg.score_floor, vector_floor=cfg.vector_floor),
         "answerer": Answerer(llm), "worker": worker,
     }
 

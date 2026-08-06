@@ -34,12 +34,21 @@ not enough to calibrate the similarity floor with real confidence. The
 design calls for 30-50 hand-written cases against the real corpus before
 this calibration should be trusted for production use.
 
-The current `retrieval.score_floor` (0.6, in `config.yaml`) was chosen by
+The current `retrieval.score_floor` (0.55, in `config.yaml`) was chosen by
 sweeping candidate floors with `--calibrate` and picking the lowest floor
 that reached the best observed refusal_accuracy without lowering
 citation_accuracy. With only 5 cases this is a crude signal — it separates
 the two out-of-corpus questions from the three in-corpus ones cleanly at
 this floor, but a single mis-scored case would shift the whole picture.
+
+A second floor, `retrieval.vector_floor` (0.42), was added later: the
+reranker scores table-row chunks as near-neutral regardless of relevance,
+so a chunk is now refused only when *both* the rerank score and the raw
+vector-similarity score fall below their floors. `--calibrate` currently
+sweeps `score_floor` only — `vector_floor` was set from a handful of live
+measurements against a table-heavy corpus, not from the golden set, and
+needs its own calibration pass once the golden set is large enough to
+cover tabular content.
 Treat it as a starting point, not a validated production threshold.
 
 Ragas integration (judged metrics requiring an external LLM judge) is not

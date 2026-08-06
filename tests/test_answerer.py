@@ -220,6 +220,83 @@ def test_history_none_default_preserves_existing_behaviour():
     assert llm.histories[0] is None
 
 
+def test_summarize_history_uses_the_requested_model():
+    # The summarization call used to always hit cfg.llm_model regardless of
+    # what the user picked in the UI, forcing Ollama to swap two different
+    # models in and out on every turn. It must use the same model as the
+    # answer it's summarizing context for.
+    llm = StubLLM()
+    answerer = Answerer(llm)
+    history = [
+        {"role": "user", "content": "q1"},
+        {"role": "assistant", "content": "a1"},
+    ]
+
+    answerer.summarize_history(history, model="llama3")
+
+    assert llm.opts[0][0] == "llama3"
+
+
+def test_answer_threads_model_into_its_own_summarization_call():
+    llm = StubLLM()
+    answerer = Answerer(llm)
+    history = [
+        {"role": "user", "content": "q1"},
+        {"role": "assistant", "content": "a1"},
+    ]
+
+    answerer.answer("second question", [_result("a.pdf", 1, "x")],
+                    model="llama3", history=history)
+
+    # opts[0] is the summarization call, opts[1] the main answer call —
+    # both must target the model the caller asked for.
+    assert llm.opts[0][0] == "llama3"
+    assert llm.opts[1][0] == "llama3"
+
+
+def test_verbatim_history_sent_to_answer_call_is_capped_but_summary_sees_all():
+    # Unbounded history was being sent to the LLM twice per turn: once
+    # condensed into the summary, once again verbatim and growing forever.
+    # The verbatim copy should be windowed to recent turns — the summary
+    # already carries the older context.
+    llm = StubLLM()
+    answerer = Answerer(llm)
+    history = []
+    for i in range(5):
+        history.append({"role": "user", "content": f"q{i}"})
+        history.append({"role": "assistant", "content": f"a{i}"})
+
+    answerer.answer("latest question", [_result("a.pdf", 1, "x")],
+                    history=history)
+
+    # Summarization (first call) still sees the full transcript, including
+    # the oldest exchange.
+    _summary_system, summary_user = llm.prompts[0]
+    assert "q0" in summary_user
+
+    # The verbatim history replayed to the answer call (second call) is
+    # capped to the most recent exchanges.
+    verbatim_history = llm.histories[1]
+    assert len(verbatim_history) == 6
+    assert all(m["content"] not in ("q0", "a0") for m in verbatim_history)
+    assert verbatim_history[-1]["content"] == "a4"
+
+
+def test_short_history_is_sent_verbatim_unchanged():
+    # Below the cap, nothing is trimmed — same behavior as before.
+    llm = StubLLM()
+    answerer = Answerer(llm)
+    history = [
+        {"role": "user", "content": "first question"},
+        {"role": "assistant", "content": "first answer"},
+    ]
+
+    answerer.answer("second question", [_result("a.pdf", 1, "x")],
+                    history=history)
+
+    assert llm.histories[1] == history
+
+
 def test_stream_with_history_includes_context_summary():
     llm = StubLLM(reply="summary text")
     answerer = Answerer(llm)

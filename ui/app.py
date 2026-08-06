@@ -22,7 +22,7 @@ except Exception:
     st.error(
         f"Cannot reach Ollama at {svc['cfg'].ollama_url}.\n\n"
         "Start it with `ollama serve`, then confirm the models are present:\n"
-        "`ollama pull qwen2.5:14b` and `ollama pull bge-m3`."
+        "`ollama pull qwen2.5:3b` and `ollama pull bge-m3`."
     )
     if st.button("Recheck"):
         st.rerun()
@@ -95,11 +95,14 @@ if question := st.chat_input("Ask about your documents"):
             {k: v for k, v in m.items() if k != "citations"}
             for m in previous
         ]
-        context_summary = svc["answerer"].summarize_history(history)
+        context_summary = svc["answerer"].summarize_history(
+            history, model=query["model"]
+        )
 
         outcome = svc["search"].find(
             question, doc_ids=doc_ids_filter,
-            score_floor=query["floor"], use_reranker=query["use_reranker"],
+            score_floor=query["floor"], vector_floor=query["vector_floor"],
+            use_reranker=query["use_reranker"],
             context_summary=context_summary,
         )
         mode = classify(question, outcome.refused, outcome.results)

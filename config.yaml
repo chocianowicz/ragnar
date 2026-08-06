@@ -25,7 +25,22 @@ retrieval:
   # 0.55 sits in that gap with margin on both sides. Still a stopgap, not a
   # real calibration - see eval/README.md, which needs a much larger golden
   # set before this number should be trusted.
+  #
+  # That 0.578+ gap does NOT hold on table-heavy corpora: bge-reranker-v2-m3
+  # scores markdown table rows as near-neutral (~0.50-0.503, sigmoid of a
+  # ~0 logit) against natural-language questions regardless of whether the
+  # row is the right answer - "no opinion", not "irrelevant". A result is
+  # now kept if EITHER score_floor OR vector_floor below is cleared, so
+  # genuinely relevant table rows aren't refused just because the
+  # cross-encoder is neutral on tabular text.
   score_floor: 0.55
+  # Raw cosine-similarity floor (the embedder's score, before reranking).
+  # Rescues content the reranker scores as neutral but the embedder placed
+  # clearly near the query. Measured on the real corpus: relevant table
+  # rows sat at 0.4494-0.4718 cosine; 0.42 sits just under that with a
+  # little margin. Same stopgap caveat as score_floor above - not a real
+  # calibration, needs a larger golden set via eval/run_eval.py --calibrate.
+  vector_floor: 0.42
 
 storage:
   data_dir: /app/data

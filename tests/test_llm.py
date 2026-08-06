@@ -42,6 +42,26 @@ def test_temperature_is_settable_and_sent_in_request():
     assert client.calls[0]["options"]["temperature"] == 0.7
 
 
+def test_keep_alive_is_sent_by_default():
+    # Without keep_alive, Ollama evicts the model on its default 5-minute
+    # TTL between chat turns, forcing a cold reload on the next request.
+    client = StubClient({"message": {"content": "ok"}})
+    llm = OllamaLLM("http://x", "m", client=client)
+
+    llm.generate("sys", "user")
+
+    assert client.calls[0]["keep_alive"] == "10m"
+
+
+def test_keep_alive_is_settable_on_the_instance():
+    client = StubClient({"message": {"content": "ok"}})
+    llm = OllamaLLM("http://x", "m", client=client, keep_alive="30m")
+
+    llm.generate("sys", "user")
+
+    assert client.calls[0]["keep_alive"] == "30m"
+
+
 def test_per_call_model_and_temperature_override_instance_defaults():
     client = StubClient({"message": {"content": "ok"}})
     llm = OllamaLLM("http://x", "default-model", client=client)

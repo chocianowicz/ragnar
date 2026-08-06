@@ -35,7 +35,8 @@ class BGEReranker:
         # The cross-encoder emits logits, not probabilities. Sigmoid maps
         # them to (0, 1) so a single interpretable floor can be configured.
         rescored = [
-            SearchResult(chunk=c.chunk, score=1 / (1 + math.exp(-float(s))))
+            SearchResult(chunk=c.chunk, score=1 / (1 + math.exp(-float(s))),
+                        vector_score=c.score)
             for c, s in zip(candidates, raw_scores)
         ]
         rescored.sort(key=lambda r: r.score, reverse=True)

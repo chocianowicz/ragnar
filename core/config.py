@@ -53,5 +53,9 @@ class Config:
         return self._raw["retrieval"]["score_floor"]
 
     @property
+    def vector_floor(self) -> float:
+        return self._raw["retrieval"]["vector_floor"]
+
+    @property
     def chunking(self) -> dict:
         return self._raw["chunking"]

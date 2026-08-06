@@ -21,18 +21,22 @@ class Search:
     """
 
     def __init__(self, embedder, store, reranker=None, candidates: int = 25,
-                 top_k: int = 5, score_floor: float = 0.0):
+                 top_k: int = 5, score_floor: float = 0.0,
+                 vector_floor: float = 0.0):
         self._embedder = embedder
         self._store = store
         self._reranker = reranker
         self._candidates = candidates
         self._top_k = top_k
-        # Public so the UI can adjust it per-query without rebuilding Search.
+        # Public so the UI can adjust them per-query without rebuilding
+        # Search.
         self.score_floor = score_floor
+        self.vector_floor = vector_floor
 
     def find(self, question: str,
              doc_ids: list[str] | None = None,
              score_floor: float | None = None,
+             vector_floor: float | None = None,
              use_reranker: bool = True,
              context_summary: str | None = None) -> SearchOutcome:
         """Retrieve, optionally rerank, then apply the similarity floor.
@@ -40,15 +44,24 @@ class Search:
         doc_ids=None searches the whole corpus; a list scopes retrieval to
         just those documents (e.g. a user-selected subset in the UI).
 
-        score_floor overrides self.score_floor for this one call, so the UI
-        can pass a per-request value without mutating shared state.
+        score_floor/vector_floor override the instance defaults for this one
+        call, so the UI can pass per-request values without mutating shared
+        state.
+
+        A result is kept if EITHER the rerank score clears score_floor OR
+        the original vector-similarity score clears vector_floor — refusal
+        only fires when both signals are weak. This rescues content (table
+        rows in particular) that the cross-encoder scores as near-neutral
+        despite being genuinely relevant: sigmoid(0) == 0.5, so "no opinion"
+        and "irrelevant" land in the same place on the rerank scale alone.
 
         use_reranker=False skips the cross-encoder entirely (much faster).
-        The floor is not applied in that mode: raw vector-similarity scores
+        Neither floor is applied in that mode: raw vector-similarity scores
         are on a different, uncalibrated scale, so refusal then happens only
         when retrieval finds nothing at all.
         """
         floor = self.score_floor if score_floor is None else score_floor
+        vfloor = self.vector_floor if vector_floor is None else vector_floor
         search_query = f"{context_summary}\n\n{question}" if context_summary else question
         vector = self._embedder.embed([search_query])[0]
         candidates = self._store.search(
@@ -62,7 +75,11 @@ class Search:
             return SearchOutcome(results=candidates[: self._top_k])
 
         ranked = self._reranker.rerank(search_query, candidates, self._top_k)
-        kept = [r for r in ranked if r.score >= floor]
+        kept = [
+            r for r in ranked
+            if r.score >= floor
+            or (r.vector_score is not None and r.vector_score >= vfloor)
+        ]
 
         if not kept:
             return SearchOutcome(

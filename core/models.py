@@ -42,6 +42,10 @@ class Document:
 class SearchResult:
     chunk: Chunk
     score: float
+    # Raw vector-similarity score from the store, preserved through
+    # reranking as a second signal — some content (e.g. table rows) scores
+    # near-neutral on the cross-encoder despite being genuinely relevant.
+    vector_score: float | None = None
 
 
 @dataclass

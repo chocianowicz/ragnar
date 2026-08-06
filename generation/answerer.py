@@ -12,6 +12,19 @@ NO_RESULTS_MESSAGE = (
     "I could not find anything relevant in the indexed documents."
 )
 
+# How many of the most recent messages are replayed verbatim to the answer
+# call. Summarization (summarize_history) always sees the full transcript —
+# only this verbatim copy is windowed, since sending the whole conversation
+# twice (once condensed, once in full) grows the prompt without bound as a
+# session gets longer.
+MAX_HISTORY_MESSAGES = 6
+
+
+def _recent(history: list[dict] | None) -> list[dict] | None:
+    if not history:
+        return history
+    return history[-MAX_HISTORY_MESSAGES:]
+
 
 def citation_labels(results: list[SearchResult]) -> list[str]:
     """Deduplicated citation labels from search results, first-seen order.
@@ -64,17 +77,22 @@ class Answerer:
     def __init__(self, llm):
         self._llm = llm
 
-    def summarize_history(self, history: list[dict]) -> str | None:
+    def summarize_history(self, history: list[dict],
+                           model: str | None = None) -> str | None:
         """Condense previous Q&A into 2-3 sentences, or None if too short.
 
         One turn or an empty history has nothing useful to summarize — the
         model handles a single follow-up fine without a summary.
+
+        model should match whatever will generate the actual answer — using
+        a different model for this call forces Ollama to swap two models in
+        and out on every turn, which is slow and pointless.
         """
         if len(history) < 2:
             return None
         system_prompt, user_prompt = build_history_summary_prompt(history)
         try:
-            return self._llm.generate(system_prompt, user_prompt)
+            return self._llm.generate(system_prompt, user_prompt, model=model)
         except Exception:
             return None
 
@@ -88,13 +106,13 @@ class Answerer:
             return Answer(text=NO_RESULTS_MESSAGE, refused=True)
 
         if context_summary is None:
-            context_summary = self.summarize_history(history or [])
+            context_summary = self.summarize_history(history or [], model=model)
         text = self._llm.generate(
             SYSTEM_PROMPT,
             build_user_prompt(question, build_excerpts(results),
                               context_summary=context_summary),
             model=model, temperature=temperature,
-            history=history,
+            history=_recent(history),
         )
 
         return Answer(text=text, citations=citation_labels(results))
@@ -111,11 +129,11 @@ class Answerer:
         instance never has to mutate the underlying LLM's state.
         """
         if context_summary is None:
-            context_summary = self.summarize_history(history or [])
+            context_summary = self.summarize_history(history or [], model=model)
         yield from self._llm.stream(
             SYSTEM_PROMPT,
             build_user_prompt(question, build_excerpts(results),
                               context_summary=context_summary),
             model=model, temperature=temperature,
-            history=history,
+            history=_recent(history),
         )

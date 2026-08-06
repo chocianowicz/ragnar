@@ -88,7 +88,18 @@ def render(svc) -> dict:
             help="How relevant a document chunk must be to be used. Higher = "
                  "stricter (refuses more, safer against wrong answers); lower "
                  "= more lenient (answers more, riskier on off-topic "
-                 "questions). Only applies when re-ranking is on.",
+                 "questions). A chunk is kept if EITHER this or the vector "
+                 "floor below is cleared. Only applies when re-ranking is on.",
+        )
+        vector_floor = st.slider(
+            "Vector floor", min_value=0.0, max_value=1.0,
+            value=float(cfg.vector_floor), step=0.05,
+            disabled=not use_reranker,
+            help="A second, more lenient relevance check on the raw "
+                 "embedding similarity, before re-ranking. Rescues content "
+                 "(table rows especially) that the re-ranker scores as "
+                 "neutral despite being genuinely relevant. Only applies "
+                 "when re-ranking is on.",
         )
 
         st.markdown("**Chunking**")
@@ -169,4 +180,5 @@ def render(svc) -> dict:
             st.rerun()
 
     return {"model": model, "temperature": temperature,
-            "floor": floor, "use_reranker": use_reranker}
+            "floor": floor, "vector_floor": vector_floor,
+            "use_reranker": use_reranker}

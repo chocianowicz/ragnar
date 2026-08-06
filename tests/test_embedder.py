@@ -34,6 +34,17 @@ def test_embedder_sends_all_texts_in_one_batch():
     assert len(client.calls) == 1
 
 
+def test_embedder_sends_keep_alive_by_default():
+    # Without keep_alive, bge-m3 is evicted on Ollama's 5-minute default TTL
+    # between chat turns and reloads cold on the next query.
+    client = StubClient({"embeddings": [[0.1, 0.2]]})
+    embedder = OllamaEmbedder("http://x", "bge-m3", client=client)
+
+    embedder.embed(["a"])
+
+    assert client.calls[0]["keep_alive"] == "10m"
+
+
 def test_embedder_returns_empty_for_no_input():
     client = StubClient({"embeddings": []})
     embedder = OllamaEmbedder("http://x", "bge-m3", client=client)

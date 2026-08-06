@@ -41,3 +41,27 @@ def test_reranker_scores_are_normalised_to_unit_interval():
 
 def test_reranker_handles_empty_candidates():
     assert BGEReranker.__init__ is not None  # import smoke test
+
+
+class FakeCrossEncoder:
+    """Stands in for sentence_transformers.CrossEncoder — returns a fixed
+    logit per pair so tests don't need the real 2.3GB model."""
+
+    def predict(self, pairs):
+        return [0.0 for _ in pairs]  # sigmoid(0) == 0.5
+
+
+def test_rerank_preserves_vector_score_from_candidates():
+    # The reranker overwrites .score with its own sigmoid, but the original
+    # vector-similarity score must survive as a second signal for the
+    # two-signal floor in Search.find().
+    candidate = SearchResult(
+        chunk=Chunk(doc_id="d", filename="f.pdf", text="row", chunk_index=0),
+        score=0.47,
+    )
+
+    ranked = BGEReranker(model=FakeCrossEncoder()).rerank(
+        "q", [candidate], top_k=1
+    )
+
+    assert ranked[0].vector_score == 0.47
