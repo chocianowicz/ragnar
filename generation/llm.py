@@ -13,16 +13,20 @@ class OllamaLLM:
         self._client = client or httpx.Client()
 
     def _payload(self, system: str, user: str, stream: bool,
-                 model: str | None, temperature: float | None) -> dict:
+                 model: str | None, temperature: float | None, *,
+                 history: list[dict] | None = None) -> dict:
         # model/temperature default to the instance values but can be
         # overridden per call, so a shared LLM instance stays safe when
         # different requests want different settings.
+        messages: list[dict] = [{"role": "system", "content": system}]
+        if history:
+            # History messages are already stripped of app-only keys
+            # (citations) by the caller — pass them through as-is.
+            messages.extend(history)
+        messages.append({"role": "user", "content": user})
         return {
             "model": model or self.model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
+            "messages": messages,
             "stream": stream,
             "options": {
                 "temperature": self.temperature if temperature is None
@@ -31,22 +35,26 @@ class OllamaLLM:
         }
 
     def generate(self, system: str, user: str, *, model: str | None = None,
-                 temperature: float | None = None) -> str:
+                 temperature: float | None = None,
+                 history: list[dict] | None = None) -> str:
         response = self._client.post(
             f"{self.base_url}/api/chat",
-            json=self._payload(system, user, False, model, temperature),
+            json=self._payload(system, user, False, model, temperature,
+                               history=history),
             timeout=self.timeout,
         )
         response.raise_for_status()
         return response.json()["message"]["content"]
 
     def stream(self, system: str, user: str, *, model: str | None = None,
-               temperature: float | None = None):
+               temperature: float | None = None,
+               history: list[dict] | None = None):
         """Yields token deltas. Used by the UI."""
         with self._client.stream(
             "POST",
             f"{self.base_url}/api/chat",
-            json=self._payload(system, user, True, model, temperature),
+            json=self._payload(system, user, True, model, temperature,
+                               history=history),
             timeout=self.timeout,
         ) as response:
             response.raise_for_status()

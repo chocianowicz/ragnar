@@ -16,7 +16,8 @@ st.set_page_config(page_title="RAGnar", page_icon="📚")
 svc = build_services()
 
 try:
-    httpx.get(f"{svc['cfg'].ollama_url}/api/tags", timeout=5).raise_for_status()
+    httpx.get(f"{svc['cfg'].ollama_url}/api/tags",
+              timeout=5).raise_for_status()
 except Exception:
     st.error(
         f"Cannot reach Ollama at {svc['cfg'].ollama_url}.\n\n"
@@ -108,9 +109,18 @@ if question := st.chat_input("Ask about your documents"):
             citations = []
         else:
             citations = citation_labels(outcome.results)
+            # Build conversation history from all messages before the
+            # current question (which was just appended). Strip the
+            # app-only 'citations' key — the LLM doesn't need it.
+            previous = st.session_state.messages[:-1]
+            history = [
+                {k: v for k, v in m.items() if k != "citations"}
+                for m in previous
+            ]
             text = st.write_stream(svc["answerer"].stream(
                 question, outcome.results,
                 model=query["model"], temperature=query["temperature"],
+                history=history,
             ))
             with st.expander("Sources"):
                 for citation in citations:

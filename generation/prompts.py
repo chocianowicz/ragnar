@@ -11,10 +11,42 @@ in a different language.
 own citations or source references in the response text.
 """
 
+SUMMARIZE_HISTORY_PROMPT = """\
+Summarize this conversation in 2-3 concise sentences. Focus on what topics
+the user has asked about so far and what information was provided. Do not
+include citations or source references. Write in the same language as the
+conversation.
+"""
 
-def build_user_prompt(question: str, excerpts: list[tuple[str, str]]) -> str:
-    """excerpts: list of (source_label, text)."""
+
+def build_history_summary_prompt(history: list[dict]) -> tuple[str, str]:
+    """Build (system, user) prompts to summarize a conversation history.
+
+    Returns the summarization system prompt and a formatted transcript of
+    user/assistant turns.
+    """
+    lines: list[str] = []
+    for msg in history:
+        role = msg.get("role", "unknown")
+        content = msg.get("content", "")
+        label = {"user": "User", "assistant": "Assistant"}.get(role, role)
+        lines.append(f"{label}: {content}")
+    return SUMMARIZE_HISTORY_PROMPT, "\n\n".join(lines)
+
+
+def build_user_prompt(question: str, excerpts: list[tuple[str, str]], *,
+                      context_summary: str | None = None) -> str:
+    """excerpts: list of (source_label, text).
+
+    When context_summary is provided it is prepended before the excerpts so
+    the model can refer back to earlier questions in the conversation.
+    """
     blocks = "\n\n".join(
         f"[{label}]\n{text}" for label, text in excerpts
     )
-    return f"Excerpts:\n\n{blocks}\n\nQuestion: {question}"
+    parts: list[str] = []
+    if context_summary:
+        parts.append(f"Conversation so far:\n{context_summary}")
+    parts.append(f"Excerpts:\n\n{blocks}")
+    parts.append(f"Question: {question}")
+    return "\n\n".join(parts)
