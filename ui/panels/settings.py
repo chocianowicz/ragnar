@@ -1,7 +1,7 @@
 import streamlit as st
 
 from ingestion.chunkers.registry import build_chunker
-from ui.services import list_chat_models
+from ui.services import list_chat_models, list_loaded_models, warm_model
 
 # `fixed` is deliberately not offered here — it's a Phase 1 relic that emits
 # no table summaries, a knowingly worse choice for anyone clicking through
@@ -52,6 +52,21 @@ def render(svc) -> dict:
             "Model", options=available_models,
             index=available_models.index(default_model),
         )
+        loaded = list_loaded_models(cfg.ollama_url)
+        if model in loaded:
+            st.caption("🟢 Model loaded in memory")
+        else:
+            st.caption(
+                "⚪ Not loaded — first response will include a loading delay"
+            )
+            if st.button("⚡ Pre-load model", key="preload_model_btn"):
+                with st.spinner(f"Loading {model} into memory…"):
+                    ok = warm_model(cfg.ollama_url, model)
+                if ok:
+                    st.toast(f"{model} is ready!", icon="✅")
+                else:
+                    st.warning(f"Could not pre-load {model}. Check Ollama logs.")
+                st.rerun()
         temperature = st.slider(
             "Temperature", min_value=0.0, max_value=1.0, value=0.0, step=0.1,
             help="0 = deterministic, always the most likely answer. Higher "

@@ -25,6 +25,7 @@ from generation.answerer import Answerer
 
 @st.cache_resource
 def build_services():
+    # Cache busted for Answerer update
     cfg = Config()
     storage = Storage(cfg.data_dir)
     registry = Registry(cfg.data_dir / "registry.db")
@@ -54,7 +55,12 @@ def build_services():
 
 @st.cache_data(ttl=30)
 def list_chat_models(ollama_url: str, exclude: str) -> list[str]:
-    """Chat-capable models pulled in Ollama, excluding the embedding model."""
+    """Chat-capable models pulled in Ollama, excluding the embedding model.
+
+    Filters out cloud-proxy stubs (name ends with ':cloud') and models with
+    no local data (size == 0) — those either require external subscriptions
+    or are not actually available to run locally.
+    """
     try:
         resp = httpx.get(f"{ollama_url}/api/tags", timeout=5)
         resp.raise_for_status()
@@ -64,9 +70,42 @@ def list_chat_models(ollama_url: str, exclude: str) -> list[str]:
         return sorted(
             m["name"] for m in resp.json().get("models", [])
             if not m["name"].startswith(base)
+            and not m["name"].endswith(":cloud")
+            and m.get("size", 0) > 0
         )
     except Exception:
         return []
+
+
+def list_loaded_models(ollama_url: str) -> list[str]:
+    """Names of models currently loaded in Ollama's memory (via /api/ps).
+
+    Not cached — callers need a live view of what is actually running.
+    """
+    try:
+        resp = httpx.get(f"{ollama_url}/api/ps", timeout=5)
+        resp.raise_for_status()
+        return [m["name"] for m in resp.json().get("models", [])]
+    except Exception:
+        return []
+
+
+def warm_model(ollama_url: str, model: str) -> bool:
+    """Pre-load a model into Ollama's memory without generating any text.
+
+    Sends an empty prompt to /api/generate with keep_alive=10m so the model
+    stays resident for at least ten minutes after loading. Returns True on
+    success, False if Ollama rejected the request.
+    """
+    try:
+        resp = httpx.post(
+            f"{ollama_url}/api/generate",
+            json={"model": model, "prompt": "", "keep_alive": "10m"},
+            timeout=300,
+        )
+        return resp.status_code < 400
+    except Exception:
+        return False
 
 
 def format_eta(seconds: float | None) -> str:

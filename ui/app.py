@@ -87,9 +87,20 @@ if question := st.chat_input("Ask about your documents"):
         st.markdown(question)
 
     with st.chat_message("assistant"):
+        # Build conversation history from all messages before the
+        # current question (which was just appended). Strip the
+        # app-only 'citations' key — the LLM doesn't need it.
+        previous = st.session_state.messages[:-1]
+        history = [
+            {k: v for k, v in m.items() if k != "citations"}
+            for m in previous
+        ]
+        context_summary = svc["answerer"].summarize_history(history)
+
         outcome = svc["search"].find(
             question, doc_ids=doc_ids_filter,
             score_floor=query["floor"], use_reranker=query["use_reranker"],
+            context_summary=context_summary,
         )
         mode = classify(question, outcome.refused, outcome.results)
 
@@ -109,18 +120,10 @@ if question := st.chat_input("Ask about your documents"):
             citations = []
         else:
             citations = citation_labels(outcome.results)
-            # Build conversation history from all messages before the
-            # current question (which was just appended). Strip the
-            # app-only 'citations' key — the LLM doesn't need it.
-            previous = st.session_state.messages[:-1]
-            history = [
-                {k: v for k, v in m.items() if k != "citations"}
-                for m in previous
-            ]
             text = st.write_stream(svc["answerer"].stream(
                 question, outcome.results,
                 model=query["model"], temperature=query["temperature"],
-                history=history,
+                history=history, context_summary=context_summary,
             ))
             with st.expander("Sources"):
                 for citation in citations:

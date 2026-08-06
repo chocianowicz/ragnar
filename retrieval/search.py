@@ -33,7 +33,8 @@ class Search:
     def find(self, question: str,
              doc_ids: list[str] | None = None,
              score_floor: float | None = None,
-             use_reranker: bool = True) -> SearchOutcome:
+             use_reranker: bool = True,
+             context_summary: str | None = None) -> SearchOutcome:
         """Retrieve, optionally rerank, then apply the similarity floor.
 
         doc_ids=None searches the whole corpus; a list scopes retrieval to
@@ -48,7 +49,8 @@ class Search:
         when retrieval finds nothing at all.
         """
         floor = self.score_floor if score_floor is None else score_floor
-        vector = self._embedder.embed([question])[0]
+        search_query = f"{context_summary}\n\n{question}" if context_summary else question
+        vector = self._embedder.embed([search_query])[0]
         candidates = self._store.search(
             vector, limit=self._candidates, doc_ids=doc_ids
         )
@@ -59,7 +61,7 @@ class Search:
         if not (use_reranker and self._reranker is not None):
             return SearchOutcome(results=candidates[: self._top_k])
 
-        ranked = self._reranker.rerank(question, candidates, self._top_k)
+        ranked = self._reranker.rerank(search_query, candidates, self._top_k)
         kept = [r for r in ranked if r.score >= floor]
 
         if not kept:

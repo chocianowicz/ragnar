@@ -1,5 +1,5 @@
 models:
-  llm: qwen2.5:14b
+  llm: qwen2.5:3b
   embedding: bge-m3
   embedding_dim: 1024
   reranker: BAAI/bge-reranker-v2-m3
