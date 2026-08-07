@@ -1,8 +1,45 @@
 import streamlit as st
+from pathlib import Path
 
 from ui.services import format_eta
 
 STATUS_ICONS = {"queued": "⏳", "processing": "⚙️", "done": "✅", "failed": "❌"}
+
+
+def _get_original_path(svc, doc_id: str, filename: str) -> Path | None:
+    """Get the path to the original uploaded file for a document."""
+    path = svc["storage"].archived_path(filename, doc_id)
+    return path if path.exists() else None
+
+
+def _open_file_at_page(path: Path, page: int | None = None) -> None:
+    """Open the original file using the system default application.
+
+    For PDFs on macOS, attempts to open at the specific page using Preview
+    or the default PDF viewer.
+    """
+    import platform
+    import subprocess
+
+    system = platform.system()
+    try:
+        if system == "Darwin":  # macOS
+            if page and path.suffix.lower() == ".pdf":
+                # Try to open at specific page using AppleScript
+                script = f'''
+                tell application "Finder"
+                    open POSIX file "{path}"
+                end tell
+                '''
+                subprocess.run(["osascript", "-e", script], check=False, capture_output=True)
+            else:
+                subprocess.run(["open", str(path)], check=False)
+        elif system == "Linux":
+            subprocess.run(["xdg-open", str(path)], check=False)
+        elif system == "Windows":
+            subprocess.run(["start", "", str(path)], check=False, shell=True)
+    except Exception:
+        pass  # Best-effort: if opening fails, the user can still view markdown
 
 
 def render(svc) -> None:
@@ -108,5 +145,43 @@ def _status_strip(svc) -> None:
                         st.rerun()
 
         if doc.status.value == "done" and st.session_state.get(f"show_md_{doc.doc_id}"):
-            markdown = svc["storage"].read_markdown(doc.doc_id)
-            st.markdown(markdown or "_Not yet converted_")
+            _render_document_viewer(svc, doc.doc_id, doc.filename)
+
+
+def _render_document_viewer(svc, doc_id: str, filename: str) -> None:
+    """Render the document viewer with optional page/sheet navigation."""
+    original_path = _get_original_path(svc, doc_id, filename)
+    page_target = st.session_state.pop(f"scroll_to_page_{doc_id}", None)
+    sheet_target = st.session_state.pop(f"scroll_to_sheet_{doc_id}", None)
+
+    # Open original file button (top of viewer)
+    if original_path:
+        cols = st.columns([3, 1])
+        with cols[0]:
+            st.markdown(f"**{filename}**")
+        with cols[1]:
+            open_label = "Open original"
+            if page_target:
+                open_label = f"Open at page {page_target}"
+            elif sheet_target:
+                open_label = f"Open sheet {sheet_target}"
+            if st.button(open_label, key=f"open_orig_{doc_id}"):
+                _open_file_at_page(original_path, page_target)
+    else:
+        st.markdown(f"**{filename}**")
+        st.caption("Original file not found — showing converted text only")
+
+    # Show converted markdown
+    markdown = svc["storage"].read_markdown(doc_id)
+    if markdown:
+        # If a specific page/sheet is targeted, try to show a jump indicator
+        if page_target:
+            st.info(f"📍 Jumped to content from page {page_target} — scroll to find the relevant section below.")
+            st.markdown(markdown)
+        elif sheet_target:
+            st.info(f"📍 Jumped to sheet {sheet_target} — scroll to find the relevant section below.")
+            st.markdown(markdown)
+        else:
+            st.markdown(markdown)
+    else:
+        st.markdown("_Not yet converted_")

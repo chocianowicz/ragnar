@@ -1,12 +1,13 @@
 from dataclasses import dataclass, field
 from enum import Enum
 
-from core.models import SearchResult
+from core.models import SearchResult, Citation
 from generation.guards import should_refuse_aggregation
 from generation.prompts import (
     SYSTEM_PROMPT, build_user_prompt,
     build_history_summary_prompt,
 )
+from generation.agentic_prompts import SYNTHESIS_PROMPT
 
 NO_RESULTS_MESSAGE = (
     "I could not find anything relevant in the indexed documents."
@@ -38,6 +39,29 @@ def citation_labels(results: list[SearchResult]) -> list[str]:
         if label not in seen:
             seen.append(label)
     return seen
+
+
+def build_citations(results: list[SearchResult]) -> list[Citation]:
+    """Rich citations with navigation metadata for the UI.
+
+    Deduplicated by label, first-seen order.
+    """
+    seen: set[str] = set()
+    citations: list[Citation] = []
+    for result in results:
+        label = result.chunk.citation_label()
+        if label not in seen:
+            seen.add(label)
+            meta = result.chunk.citation_meta()
+            citations.append(Citation(
+                label=label,
+                doc_id=meta["doc_id"],
+                filename=meta["filename"],
+                page=meta["page"],
+                sheet=meta["sheet"],
+                chunk_index=meta["chunk_index"],
+            ))
+    return citations
 
 
 def build_excerpts(results: list[SearchResult]) -> list[tuple[str, str]]:

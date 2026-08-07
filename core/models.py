@@ -28,6 +28,27 @@ class Chunk:
             return f"{self.filename}, sheet {self.sheet}"
         return self.filename
 
+    def citation_meta(self) -> dict[str, str | int | None]:
+        """Metadata needed to navigate to the exact citation location."""
+        return {
+            "doc_id": self.doc_id,
+            "filename": self.filename,
+            "page": self.page,
+            "sheet": self.sheet,
+            "chunk_index": self.chunk_index,
+        }
+
+
+@dataclass
+class Citation:
+    """A rich citation with navigation metadata for the UI."""
+    label: str
+    doc_id: str
+    filename: str
+    page: int | None = None
+    sheet: str | None = None
+    chunk_index: int = 0
+
 
 @dataclass
 class Document:

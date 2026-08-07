@@ -1,0 +1,425 @@
+"""Agentic RAG orchestration: query rewriting, multi-query retrieval,
+multi-hop reasoning, and self-correction.
+"""
+from __future__ import annotations
+
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
+
+from core.models import Chunk, SearchResult
+from generation.agentic_prompts import (
+    build_rewrite_prompt,
+    build_multi_query_prompt,
+    build_multi_hop_prompt,
+    build_self_correction_prompt,
+)
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_MAX_HOPS = 3
+DEFAULT_MULTI_QUERY_COUNT = 3
+FAST_PATH_MIN_RESULTS = 3         # Need at least N results clearing the floor
+
+
+@dataclass
+class AgenticSearchOutcome:
+    """Extended outcome that carries the agentic reasoning trace."""
+    results: list[SearchResult] = field(default_factory=list)
+    related: list[SearchResult] = field(default_factory=list)
+    refused: bool = False
+    # Reasoning trace for transparency / debugging
+    rewritten_query: str | None = None
+    queries_executed: list[str] = field(default_factory=list)
+    hops_performed: int = 0
+    self_corrected: bool = False
+    correction_notes: str | None = None
+    fast_path: bool = False  # True when expensive stages were skipped
+
+
+class AgenticSearch:
+    """Wraps a base Search with agentic capabilities.
+
+    The agentic layer sits *above* the existing retrieval stack — it uses
+    the same embedder, store, and reranker, but adds:
+
+    1. Query rewriting — transforms vague / ambiguous queries before retrieval.
+    2. Multi-query retrieval — generates N query variants, fuses results.
+    3. Multi-hop retrieval — iteratively retrieves based on intermediate findings.
+    4. Self-correction — evaluates answer completeness and re-retrieves if needed.
+
+    Fast-path: when the base search returns strong results, skip the expensive
+    LLM-based multi-hop and self-correction stages entirely.
+    """
+
+    def __init__(
+        self,
+        base_search,          # retrieval.search.Search instance
+        llm,                    # generation.llm.OllamaLLM instance
+        max_hops: int = DEFAULT_MAX_HOPS,
+        multi_query_count: int = DEFAULT_MULTI_QUERY_COUNT,
+        enable_rewrite: bool = True,
+        enable_multi_query: bool = True,
+        enable_multi_hop: bool = True,
+        enable_self_correction: bool = True,
+        fast_path_min_results: int = FAST_PATH_MIN_RESULTS,
+    ):
+        self._base_search = base_search
+        self._llm = llm
+        self._max_hops = max_hops
+        self._multi_query_count = multi_query_count
+        self._enable_rewrite = enable_rewrite
+        self._enable_multi_query = enable_multi_query
+        self._enable_multi_hop = enable_multi_hop
+        self._enable_self_correction = enable_self_correction
+        self._fast_path_min_results = fast_path_min_results
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def find(
+        self,
+        question: str,
+        doc_ids: list[str] | None = None,
+        score_floor: float | None = None,
+        vector_floor: float | None = None,
+        use_reranker: bool = True,
+        context_summary: str | None = None,
+    ) -> AgenticSearchOutcome:
+        """Agentic retrieval pipeline.
+
+        Pipeline order:
+        1. Optional query rewriting.
+        2. Base search (fast-path check after this).
+        3. Optional multi-query retrieval (parallel).
+        4. Fast-path check: if results are strong, skip to answer.
+        5. Optional multi-hop retrieval.
+        6. Optional self-correction.
+        7. Apply floors and return.
+        """
+        outcome = AgenticSearchOutcome()
+
+        # 1. Query rewriting
+        query = self._rewrite(question, context_summary) \
+                if self._enable_rewrite else question
+        outcome.rewritten_query = query if self._enable_rewrite else None
+
+        # 2. Base search (single query first — cheap)
+        base_result = self._base_search.find(
+            query, doc_ids=doc_ids,
+            score_floor=score_floor, vector_floor=vector_floor,
+            use_reranker=use_reranker, context_summary=context_summary,
+        )
+        outcome.queries_executed.append(query)
+
+        if not base_result.results and not base_result.related:
+            return AgenticSearchOutcome(refused=True, rewritten_query=outcome.rewritten_query)
+
+        all_results: list[SearchResult] = list(base_result.results)
+
+        # 3. Multi-query retrieval (parallel, only if enabled and base wasn't great)
+        if self._enable_multi_query and not self._is_fast_path(all_results, score_floor):
+            extra = self._retrieve_multi_query(
+                query, doc_ids, score_floor, vector_floor, use_reranker,
+                context_summary, outcome,
+            )
+            all_results.extend(extra)
+
+        # 4. Fast-path check: skip expensive stages if results are already strong
+        if self._is_fast_path(all_results, score_floor):
+            outcome.fast_path = True
+            final_results = self._fuse_results(all_results)
+            return self._apply_floors(
+                final_results, score_floor, vector_floor, use_reranker, outcome,
+            )
+
+        # 5. Multi-hop retrieval (expensive — only if needed)
+        if self._enable_multi_hop:
+            all_results = self._multi_hop(
+                question, all_results, doc_ids, score_floor, vector_floor,
+                use_reranker, context_summary, outcome,
+            )
+
+        # 6. Deduplicate and sort
+        final_results = self._fuse_results(all_results)
+
+        if not final_results:
+            return AgenticSearchOutcome(
+                refused=True, rewritten_query=outcome.rewritten_query,
+                queries_executed=outcome.queries_executed,
+            )
+
+        # 7. Self-correction check (expensive — only if multi-hop didn't already run)
+        if self._enable_self_correction and outcome.hops_performed == 0:
+            correction = self._self_correct(question, final_results)
+            if correction and correction.get("needs_more"):
+                outcome.self_corrected = True
+                outcome.correction_notes = correction.get("reason")
+                follow_up = correction.get("follow_up")
+                if follow_up and follow_up.lower() != "none":
+                    extra = self._base_search.find(
+                        follow_up, doc_ids=doc_ids,
+                        score_floor=score_floor, vector_floor=vector_floor,
+                        use_reranker=use_reranker, context_summary=context_summary,
+                    )
+                    if extra.results:
+                        final_results = self._fuse_results(final_results + extra.results)
+                        outcome.hops_performed += 1
+
+        return self._apply_floors(
+            final_results, score_floor, vector_floor, use_reranker, outcome,
+        )
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _is_fast_path(self, results: list[SearchResult], score_floor: float | None = None) -> bool:
+        """Check if results are already strong enough to skip expensive stages.
+
+        A result set is "strong" when at least FAST_PATH_MIN_RESULTS chunks
+        have a score above the configured score_floor (or a default of 0.55).
+        This means the base search already found relevant content, so multi-hop
+        reasoning and self-correction are unlikely to add value.
+        """
+        if not results:
+            return False
+        floor = score_floor if score_floor is not None else self._base_search.score_floor
+        # If floor is 0 (reranker disabled), use a reasonable default
+        if floor <= 0:
+            floor = 0.55
+        strong = [r for r in results if r.score >= floor]
+        return len(strong) >= self._fast_path_min_results
+
+    def _apply_floors(
+        self,
+        final_results: list[SearchResult],
+        score_floor: float | None,
+        vector_floor: float | None,
+        use_reranker: bool,
+        outcome: AgenticSearchOutcome,
+    ) -> AgenticSearchOutcome:
+        """Apply score floors and return the final outcome."""
+        if not final_results:
+            return AgenticSearchOutcome(
+                refused=True, rewritten_query=outcome.rewritten_query,
+                queries_executed=outcome.queries_executed,
+                hops_performed=outcome.hops_performed,
+                self_corrected=outcome.self_corrected,
+                correction_notes=outcome.correction_notes,
+                fast_path=outcome.fast_path,
+            )
+
+        if use_reranker and self._base_search._reranker is not None:
+            floor = self._base_search.score_floor if score_floor is None else score_floor
+            vfloor = self._base_search.vector_floor if vector_floor is None else vector_floor
+            kept = [
+                r for r in final_results
+                if r.score >= floor or (r.vector_score is not None and r.vector_score >= vfloor)
+            ]
+            if not kept:
+                return AgenticSearchOutcome(
+                    refused=True, related=final_results[:3],
+                    rewritten_query=outcome.rewritten_query,
+                    queries_executed=outcome.queries_executed,
+                    hops_performed=outcome.hops_performed,
+                    self_corrected=outcome.self_corrected,
+                    correction_notes=outcome.correction_notes,
+                    fast_path=outcome.fast_path,
+                )
+            final_results = kept
+
+        return AgenticSearchOutcome(
+            results=final_results,
+            rewritten_query=outcome.rewritten_query,
+            queries_executed=outcome.queries_executed,
+            hops_performed=outcome.hops_performed,
+            self_corrected=outcome.self_corrected,
+            correction_notes=outcome.correction_notes,
+            fast_path=outcome.fast_path,
+        )
+
+    def _rewrite(self, question: str, context_summary: str | None = None) -> str:
+        """Use the LLM to rewrite the query for better retrieval."""
+        system, user = build_rewrite_prompt(question, context_summary)
+        try:
+            rewritten = self._llm.generate(system, user).strip()
+            if rewritten and len(rewritten) > 5:
+                logger.debug("Rewrote query: %r -> %r", question, rewritten)
+                return rewritten
+        except Exception as exc:
+            logger.warning("Query rewrite failed: %s", exc)
+        return question
+
+    def _generate_multi_queries(self, question: str) -> list[str]:
+        """Generate N query variants."""
+        system, user = build_multi_query_prompt(question, self._multi_query_count)
+        try:
+            raw = self._llm.generate(system, user).strip()
+            queries = [q.strip() for q in raw.split("\n") if q.strip()]
+            # Deduplicate while preserving order
+            seen: set[str] = set()
+            unique = []
+            for q in queries:
+                key = q.lower().strip("?.")
+                if key not in seen:
+                    seen.add(key)
+                    unique.append(q)
+            if unique:
+                logger.debug("Generated %d multi-queries", len(unique))
+                return unique
+        except Exception as exc:
+            logger.warning("Multi-query generation failed: %s", exc)
+        return [question]
+
+    def _retrieve_multi_query(
+        self,
+        query: str,
+        doc_ids: list[str] | None,
+        score_floor: float | None,
+        vector_floor: float | None,
+        use_reranker: bool,
+        context_summary: str | None,
+        outcome: AgenticSearchOutcome,
+    ) -> list[SearchResult]:
+        """Execute multi-query retrieval in parallel using a thread pool.
+
+        Base searches are independent (different query embeddings), so we
+        run them concurrently. The LLM multi-query generation still happens
+        sequentially since it's one prompt.
+        """
+        queries = self._generate_multi_queries(query)
+        all_results: list[SearchResult] = []
+
+        # Run all base searches concurrently
+        with ThreadPoolExecutor(max_workers=min(len(queries), 4)) as executor:
+            future_to_query: dict = {}
+            for q in queries:
+                # Skip the original query if it was already searched
+                if q == query and query in outcome.queries_executed:
+                    continue
+                outcome.queries_executed.append(q)
+                future = executor.submit(
+                    self._base_search.find,
+                    q, doc_ids=doc_ids,
+                    score_floor=score_floor, vector_floor=vector_floor,
+                    use_reranker=use_reranker, context_summary=context_summary,
+                )
+                future_to_query[future] = q
+
+            for future in as_completed(future_to_query):
+                try:
+                    result = future.result()
+                    if result.results:
+                        all_results.extend(result.results)
+                    elif result.related:
+                        all_results.extend(result.related)
+                except Exception as exc:
+                    q = future_to_query[future]
+                    logger.warning("Multi-query search failed for %r: %s", q, exc)
+
+        return all_results
+
+    def _multi_hop(
+        self,
+        original_question: str,
+        current_results: list[SearchResult],
+        doc_ids: list[str] | None,
+        score_floor: float | None,
+        vector_floor: float | None,
+        use_reranker: bool,
+        context_summary: str | None,
+        outcome: AgenticSearchOutcome,
+    ) -> list[SearchResult]:
+        """Iteratively retrieve additional information if gaps remain."""
+        accumulated = list(current_results)
+
+        for hop in range(1, self._max_hops + 1):
+            excerpts = [(r.chunk.citation_label(), r.chunk.text) for r in accumulated]
+            system, user = build_multi_hop_prompt(original_question, excerpts)
+            try:
+                raw = self._llm.generate(system, user).strip()
+            except Exception as exc:
+                logger.warning("Multi-hop reasoning failed at hop %d: %s", hop, exc)
+                break
+
+            sufficient = self._parse_tag(raw, "Sufficient", "no").lower()
+            follow_up = self._parse_tag(raw, "FollowUp", "none")
+
+            if sufficient in ("yes", "partial") or follow_up.lower() in ("none", "", "n/a"):
+                break
+
+            outcome.hops_performed += 1
+            outcome.queries_executed.append(f"hop{hop}: {follow_up}")
+
+            extra = self._base_search.find(
+                follow_up, doc_ids=doc_ids,
+                score_floor=score_floor, vector_floor=vector_floor,
+                use_reranker=use_reranker, context_summary=context_summary,
+            )
+            if extra.results:
+                accumulated.extend(extra.results)
+            elif extra.related:
+                accumulated.extend(extra.related)
+            else:
+                # No more info available — stop
+                break
+
+        return accumulated
+
+    def _self_correct(
+        self, question: str, results: list[SearchResult],
+    ) -> dict[str, str | bool | None] | None:
+        """Evaluate whether the current results adequately answer the question."""
+        # We need a draft answer to evaluate — generate one quickly
+        from generation.prompts import SYSTEM_PROMPT, build_user_prompt
+        from generation.answerer import build_excerpts
+
+        excerpts = build_excerpts(results)
+        draft_prompt = build_user_prompt(question, excerpts)
+        try:
+            draft = self._llm.generate(SYSTEM_PROMPT, draft_prompt)
+        except Exception as exc:
+            logger.warning("Self-correction draft generation failed: %s", exc)
+            return None
+
+        system, user = build_self_correction_prompt(question, excerpts, draft)
+        try:
+            raw = self._llm.generate(system, user).strip()
+        except Exception as exc:
+            logger.warning("Self-correction evaluation failed: %s", exc)
+            return None
+
+        complete = self._parse_tag(raw, "Complete", "partial")
+        contradictions = self._parse_tag(raw, "Contradictions", "no")
+        improvement = self._parse_tag(raw, "Improvement", "none")
+
+        needs_more = complete.lower() in ("no", "partial") or contradictions.lower() == "yes"
+        follow_up = improvement if needs_more and improvement.lower() not in ("none", "", "n/a") else None
+        return {"needs_more": needs_more, "reason": improvement, "follow_up": follow_up}
+
+    @staticmethod
+    def _fuse_results(results: list[SearchResult]) -> list[SearchResult]:
+        """Deduplicate by chunk text and keep the best score per unique chunk."""
+        best: dict[str, SearchResult] = {}
+        for r in results:
+            key = f"{r.chunk.doc_id}:{r.chunk.chunk_index}"
+            existing = best.get(key)
+            if existing is None or r.score > existing.score:
+                best[key] = r
+        fused = sorted(best.values(), key=lambda x: x.score, reverse=True)
+        return fused
+
+    @staticmethod
+    def _parse_tag(text: str, tag: str, default: str) -> str:
+        """Parse a tagged value from structured LLM output.
+
+        Matches "Tag: value" at the start of a line, case-insensitive.
+        """
+        tag_lower = tag.lower()
+        for line in text.splitlines():
+            line = line.strip()
+            if line.lower().startswith(f"{tag_lower}:"):
+                return line.split(":", 1)[1].strip()
+        return default

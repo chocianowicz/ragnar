@@ -73,6 +73,16 @@ def render(svc) -> dict:
                  "values allow more varied, less predictable phrasing.",
         )
 
+        st.markdown("**Agentic RAG**")
+        enable_rewrite = st.checkbox("Query rewriting", value=True,
+                                    help="Use LLM to rewrite queries for better retrieval")
+        enable_multi_query = st.checkbox("Multi-query retrieval", value=True,
+                                         help="Generate multiple query variants and fuse results")
+        enable_multi_hop = st.checkbox("Multi-hop reasoning", value=True,
+                                       help="Iteratively retrieve based on intermediate findings")
+        enable_self_correction = st.checkbox("Self-correction", value=True,
+                                            help="Evaluate answer completeness and re-retrieve if needed")
+
         st.markdown("**Retrieval**")
         use_reranker = st.checkbox(
             "Re-rank results for accuracy", value=True,
@@ -181,4 +191,8 @@ def render(svc) -> dict:
 
     return {"model": model, "temperature": temperature,
             "floor": floor, "vector_floor": vector_floor,
-            "use_reranker": use_reranker}
+            "use_reranker": use_reranker,
+            "enable_rewrite": enable_rewrite,
+            "enable_multi_query": enable_multi_query,
+            "enable_multi_hop": enable_multi_hop,
+            "enable_self_correction": enable_self_correction}

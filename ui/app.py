@@ -5,7 +5,8 @@ import streamlit as st
 
 from generation.guards import aggregation_refusal
 from generation.answerer import (
-    AnswerMode, classify, NO_RESULTS_MESSAGE, citation_labels,
+    AnswerMode, classify, NO_RESULTS_MESSAGE,
+    citation_labels, build_citations,
 )
 from history.chat_store import chat_title
 from ui.services import build_services
@@ -41,8 +42,91 @@ div[data-testid="stExpander"] summary p {
     font-size: 1.5rem !important;
     font-weight: 600 !important;
 }
+/* Citation links */
+.citation-link {
+    display: inline-block;
+    padding: 2px 8px;
+    margin: 2px 4px 2px 0;
+    background-color: #1e1e2e;
+    border: 1px solid #4a4a6a;
+    border-radius: 4px;
+    color: #89b4fa;
+    font-size: 0.8rem;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+.citation-link:hover {
+    background-color: #313244;
+    color: #b4befe;
+}
+/* Agentic trace expander styling */
+.agentic-trace {
+    font-size: 0.8rem;
+    color: #a6adc8;
+}
+.agentic-trace .trace-label {
+    color: #cdd6f4;
+    font-weight: 500;
+}
 </style>
 """
+
+
+def _open_citation(doc_id: str, page: int | None, sheet: str | None) -> None:
+    """Set session state so the Documents panel will jump to the cited location."""
+    st.session_state[f"show_md_{doc_id}"] = True
+    st.session_state[f"scroll_to_page_{doc_id}"] = page
+    st.session_state[f"scroll_to_sheet_{doc_id}"] = sheet
+    st.session_state["_focus_doc_id"] = doc_id
+
+
+def _render_citations(citations: list) -> None:
+    """Render clickable citation badges that open the source document."""
+    for cite in citations:
+        if isinstance(cite, dict):
+            label = cite.get("label", cite)
+            doc_id = cite.get("doc_id")
+            page = cite.get("page")
+            sheet = cite.get("sheet")
+        else:
+            label = str(cite)
+            doc_id = None
+            page = None
+            sheet = None
+
+        if doc_id:
+            st.markdown(
+                f'<a class="citation-link" href="#" '
+                f'title="Open {label}">📄 {label}</a>',
+                unsafe_allow_html=True,
+            )
+            # Streamlit button to actually open the document
+            if st.button(f"Open {label}", key=f"cite_btn_{doc_id}_{page or 0}_{sheet or 'none'}",
+                        help=f"Open {label} at the referenced location"):
+                _open_citation(doc_id, page, sheet)
+                st.rerun()
+        else:
+            st.caption(label)
+
+
+def _render_agentic_trace(outcome) -> None:
+    """Show the agentic reasoning trace in a collapsible section."""
+    trace_parts: list[str] = []
+    if outcome.rewritten_query and outcome.rewritten_query != outcome.queries_executed[0] if outcome.queries_executed else False:
+        trace_parts.append(f"Rewritten query: {outcome.rewritten_query}")
+    if outcome.queries_executed:
+        trace_parts.append(f"Queries executed: {len(outcome.queries_executed)}")
+    if outcome.hops_performed:
+        trace_parts.append(f"Multi-hops performed: {outcome.hops_performed}")
+    if outcome.self_corrected:
+        trace_parts.append(f"Self-corrected: {outcome.correction_notes or 'yes'}")
+
+    if trace_parts:
+        with st.expander("🧠 Agentic reasoning trace", expanded=False):
+            for part in trace_parts:
+                st.markdown(f"<div class='agentic-trace'><span class='trace-label'>{part}</span></div>", unsafe_allow_html=True)
+
 
 with st.sidebar:
     st.title("RAGnar - local RAG chat app")
@@ -78,8 +162,7 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
         if message.get("citations"):
             with st.expander("Sources"):
-                for citation in message["citations"]:
-                    st.caption(citation)
+                _render_citations(message["citations"])
 
 if question := st.chat_input("Ask about your documents"):
     st.session_state.messages.append({"role": "user", "content": question})
@@ -99,18 +182,33 @@ if question := st.chat_input("Ask about your documents"):
             history, model=query["model"]
         )
 
-        outcome = svc["search"].find(
-            question, doc_ids=doc_ids_filter,
-            score_floor=query["floor"], vector_floor=query["vector_floor"],
-            use_reranker=query["use_reranker"],
-            context_summary=context_summary,
-        )
+        # Use agentic search if available
+        if svc.get("agentic_search") is not None:
+            svc["agentic_search"]._enable_rewrite = query["enable_rewrite"]
+            svc["agentic_search"]._enable_multi_query = query["enable_multi_query"]
+            svc["agentic_search"]._enable_multi_hop = query["enable_multi_hop"]
+            svc["agentic_search"]._enable_self_correction = query["enable_self_correction"]
+            outcome = svc["agentic_search"].find(
+                question, doc_ids=doc_ids_filter,
+                score_floor=query["floor"], vector_floor=query["vector_floor"],
+                use_reranker=query["use_reranker"],
+                context_summary=context_summary,
+            )
+        else:
+            outcome = svc["search"].find(
+                question, doc_ids=doc_ids_filter,
+                score_floor=query["floor"], vector_floor=query["vector_floor"],
+                use_reranker=query["use_reranker"],
+                context_summary=context_summary,
+            )
+
         mode = classify(question, outcome.refused, outcome.results)
 
         if mode is AnswerMode.NO_RESULTS:
             text = NO_RESULTS_MESSAGE
             st.markdown(text)
             citations = []
+            rich_citations = []
 
             related_labels = citation_labels(outcome.related)
             if related_labels:
@@ -121,19 +219,28 @@ if question := st.chat_input("Ask about your documents"):
             text = aggregation_refusal(outcome.results)
             st.warning(text)
             citations = []
+            rich_citations = []
         else:
-            citations = citation_labels(outcome.results)
+            # Build rich citations with navigation metadata
+            rich_citations = build_citations(outcome.results)
+            citations = [c.label for c in rich_citations]
+
             text = st.write_stream(svc["answerer"].stream(
                 question, outcome.results,
                 model=query["model"], temperature=query["temperature"],
                 history=history, context_summary=context_summary,
             ))
             with st.expander("Sources"):
-                for citation in citations:
-                    st.caption(citation)
+                _render_citations([{"label": c.label, "doc_id": c.doc_id,
+                                    "page": c.page, "sheet": c.sheet}
+                                   for c in rich_citations])
+
+        # Render agentic trace if available
+        if hasattr(outcome, "hops_performed"):
+            _render_agentic_trace(outcome)
 
     st.session_state.messages.append(
-        {"role": "assistant", "content": text, "citations": citations}
+        {"role": "assistant", "content": text, "citations": rich_citations if 'rich_citations' in locals() else citations}
     )
 
     # Persist the conversation. Mint an id on first save so a chat only

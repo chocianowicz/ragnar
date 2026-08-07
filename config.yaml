@@ -45,3 +45,11 @@ retrieval:
 storage:
   data_dir: /app/data
   collection: documents
+
+agentic:
+  enable_rewrite: true
+  enable_multi_query: true
+  enable_multi_hop: true
+  enable_self_correction: true
+  max_hops: 3
+  multi_query_count: 3

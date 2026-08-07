@@ -18,6 +18,7 @@ from history.chat_store import ChatStore
 from retrieval.embedder import OllamaEmbedder
 from retrieval.store import QdrantStore
 from retrieval.search import Search
+from retrieval.agentic import AgenticSearch
 from retrieval.reranker import BGEReranker
 from generation.llm import OllamaLLM
 from generation.answerer import Answerer
@@ -42,13 +43,27 @@ def build_services():
     worker = IngestWorker(storage, registry, pipeline)
     worker.start()   # resets stale PROCESSING rows on startup
 
+    base_search = Search(
+        embedder, store, reranker=BGEReranker(cfg.reranker_model),
+        candidates=cfg.candidates, top_k=cfg.top_k,
+        score_floor=cfg.score_floor, vector_floor=cfg.vector_floor,
+    )
+    agentic_cfg = getattr(cfg, "agentic", None) or {}
+    agentic_search = AgenticSearch(
+        base_search, llm,
+        max_hops=agentic_cfg.get("max_hops", 3),
+        multi_query_count=agentic_cfg.get("multi_query_count", 3),
+        enable_rewrite=agentic_cfg.get("enable_rewrite", True),
+        enable_multi_query=agentic_cfg.get("enable_multi_query", True),
+        enable_multi_hop=agentic_cfg.get("enable_multi_hop", True),
+        enable_self_correction=agentic_cfg.get("enable_self_correction", True),
+    )
+
     return {
         "cfg": cfg, "storage": storage, "registry": registry, "chats": chats,
         "store": store, "pipeline": pipeline, "embedder": embedder,
-        "search": Search(
-            embedder, store, reranker=BGEReranker(cfg.reranker_model),
-            candidates=cfg.candidates, top_k=cfg.top_k,
-            score_floor=cfg.score_floor, vector_floor=cfg.vector_floor),
+        "search": base_search,
+        "agentic_search": agentic_search,
         "answerer": Answerer(llm), "worker": worker,
     }
 

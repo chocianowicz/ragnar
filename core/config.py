@@ -59,3 +59,7 @@ class Config:
     @property
     def chunking(self) -> dict:
         return self._raw["chunking"]
+
+    @property
+    def agentic(self) -> dict:
+        return self._raw.get("agentic", {})
