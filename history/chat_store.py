@@ -33,6 +33,14 @@ def chat_title(messages: list[dict]) -> str:
     return "New chat"
 
 
+def _json_default(obj):
+    """Convert dataclass instances to plain dicts so they survive json.dumps."""
+    if hasattr(obj, "__dataclass_fields__"):
+        return {f: getattr(obj, f) for f in obj.__dataclass_fields__}
+    raise TypeError(
+        f"Object of type {obj.__class__.__name__} is not JSON serializable")
+
+
 class ChatStore:
     """SQLite persistence for conversation history.
 
@@ -66,7 +74,8 @@ class ChatStore:
         the title, messages, and updated_at move.
         """
         now = time.time()
-        payload = json.dumps(messages, ensure_ascii=False)
+        payload = json.dumps(messages, ensure_ascii=False,
+                             default=_json_default)
         with self._lock:
             self._conn.execute(
                 "INSERT INTO chats "
