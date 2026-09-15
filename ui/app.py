@@ -477,8 +477,6 @@ if active is not None:
             st.rerun()
         else:  # noqa: RET505
             st.caption(f"{active.status}…  ·  {active.elapsed():.0f}s")
-            st.caption("This keeps running if you open another chat or "
-                       "a source — come back and it will be here.")
 
 if jobs.any_running():
     # Redraw while anything is still working — including a question left
