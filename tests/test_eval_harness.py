@@ -81,3 +81,27 @@ def test_golden_set_round_trips_non_ascii_questions(tmp_path):
     )
 
     assert load_golden(path)[0]["question"].endswith("kwota?")
+
+
+def test_a_plain_entry_is_one_turn():
+    from eval.run_eval import turns_of
+    assert turns_of({"question": "What is the notice period?"}) == \
+        ["What is the notice period?"]
+
+
+def test_a_chain_entry_lists_its_turns_in_order():
+    from eval.run_eval import turns_of
+    entry = {"turns": ["What is Norway's target?", "And the base year for that?"]}
+    assert turns_of(entry) == entry["turns"]
+
+
+def test_an_entry_with_both_is_rejected():
+    from eval.run_eval import turns_of
+    with pytest.raises(SystemExit, match="either"):
+        turns_of({"question": "q", "turns": ["a", "b"]})
+
+
+def test_an_entry_with_neither_is_rejected():
+    from eval.run_eval import turns_of
+    with pytest.raises(SystemExit, match="either"):
+        turns_of({"expected_answer": "x"})

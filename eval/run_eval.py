@@ -29,6 +29,7 @@ from retrieval.store import QdrantStore
 from retrieval.reranker import BGEReranker
 from retrieval.search import Search
 from generation.llm import OllamaLLM
+from generation import followup
 from generation.answerer import Answerer, AnswerMode, classify
 from eval.metrics import refusal_accuracy, citation_accuracy
 
@@ -40,6 +41,22 @@ def load_golden(path: Path) -> list[dict]:
     if not entries:
         raise SystemExit(f"{path} is empty — nothing to evaluate.")
     return entries
+
+
+def turns_of(entry: dict) -> list[str]:
+    """The questions an entry asks, in order.
+
+    A plain entry has one `question:`. A follow-up chain has `turns:`, and
+    only the last turn is scored — the earlier ones exist to give it
+    something to refer back to, exactly as a user would.
+    """
+    has_q, has_t = "question" in entry, "turns" in entry
+    if has_q == has_t:
+        raise SystemExit(
+            f"golden entry must have either question: or turns:, got "
+            f"{sorted(entry)}"
+        )
+    return [entry["question"]] if has_q else list(entry["turns"])
 
 
 def check_corpus(store: QdrantStore, golden: list[dict]) -> None:
@@ -87,7 +104,8 @@ def run_cases(score_floor: float | None = None,
                     BGEReranker(cfg.reranker_model,
                                 max_length=cfg.reranker_max_length),
                     cfg.candidates, cfg.top_k, floor)
-    answerer = Answerer(OllamaLLM(cfg.ollama_url, cfg.llm_model))
+    llm = OllamaLLM(cfg.ollama_url, cfg.llm_model)
+    answerer = Answerer(llm)
 
     golden = load_golden(golden_path or (ROOT / "golden_set.yaml"))
     if verify_corpus:
@@ -95,19 +113,33 @@ def run_cases(score_floor: float | None = None,
     cases = []
 
     for entry in golden:
-        outcome = search.find(entry["question"])
-        mode = classify(entry["question"], outcome.refused, outcome.results)
+        history: list[dict] = []
+        outcome = None
+        answer_text, citations, refused, resolved = "", [], True, None
 
-        if mode is not AnswerMode.ANSWER:
-            answer_text, citations, refused = "", [], True
-        else:
-            answer = answerer.answer(entry["question"], outcome.results)
-            answer_text = answer.text
-            citations = answer.citations
-            refused = answer.refused
+        for question in turns_of(entry):
+            search_question, was_resolved = question, False
+            if history:
+                search_question, was_resolved = followup.resolve(
+                    llm, question, history)
+            outcome = search.find(search_question)
+            mode = classify(question, outcome.refused, outcome.results)
+
+            if mode is not AnswerMode.ANSWER:
+                answer_text, citations, refused = "", [], True
+            else:
+                answer = answerer.answer(question, outcome.results,
+                                         history=history)
+                answer_text, citations, refused = (
+                    answer.text, answer.citations, answer.refused)
+            resolved = search_question if was_resolved else None
+            history += [{"role": "user", "content": question},
+                        {"role": "assistant", "content": answer_text}]
 
         cases.append({
             **entry,
+            "question": turns_of(entry)[-1],
+            "resolved_question": resolved,
             "answer": answer_text,
             "citations": citations,
             "refused": refused,
