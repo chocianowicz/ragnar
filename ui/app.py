@@ -195,6 +195,32 @@ def render_trace(trace) -> None:
         if seconds:
             st.caption("  ".join(f"{k} {v:.1f}s" for k, v in seconds.items()))
 
+        agentic = trace.get("agentic")
+        if agentic:
+            st.divider()
+            st.markdown(
+                f"**{agentic.get('llm_calls', 0)}** extra model call(s) "
+                f"before the answer · pool widened to "
+                f"**{agentic.get('pool_size', 0)}** passages"
+            )
+            if agentic.get("rewritten_query"):
+                # st.text, not markdown: this is model output and must not
+                # be able to inject formatting or markup into the page.
+                st.caption("Searched instead for:")
+                st.text(agentic["rewritten_query"])
+            queries = agentic.get("queries") or []
+            if len(queries) > 1:
+                st.caption(f"{len(queries)} phrasings searched:")
+                for q in queries:
+                    st.text(f"• {q}")
+            if agentic.get("hops"):
+                st.caption(f"Followed up {agentic['hops']} time(s) "
+                           f"after finding gaps.")
+            if agentic.get("self_corrected"):
+                st.caption("Draft answer judged incomplete; searched again.")
+            for note in agentic.get("notes") or []:
+                st.caption(f"⚠ {note}")
+
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -218,12 +244,29 @@ if question := st.chat_input("Ask about your documents"):
         # Retrieval alone runs to tens of seconds locally. Narrate it, so
         # the wait is legible instead of a bare spinner.
         with st.status("Searching your documents", expanded=True) as status:
-            outcome = svc["search"].find(
-                question, doc_ids=doc_ids_filter,
-                score_floor=query["floor"], candidates=query["candidates"],
-                use_reranker=query["use_reranker"],
-                on_step=lambda label: status.update(label=label),
-            )
+            step = lambda label: status.update(label=label)
+            extras = any((query["rewrite"], query["multi_query"],
+                          query["multi_hop"], query["self_correct"]))
+            if extras:
+                outcome, agentic = svc["agentic"].find(
+                    question, doc_ids=doc_ids_filter,
+                    score_floor=query["floor"],
+                    candidates=query["candidates"],
+                    use_reranker=query["use_reranker"],
+                    rewrite=query["rewrite"],
+                    multi_query=query["multi_query"],
+                    multi_hop=query["multi_hop"],
+                    self_correct=query["self_correct"],
+                    on_step=step,
+                )
+            else:
+                outcome = svc["search"].find(
+                    question, doc_ids=doc_ids_filter,
+                    score_floor=query["floor"],
+                    candidates=query["candidates"],
+                    use_reranker=query["use_reranker"], on_step=step,
+                )
+                agentic = None
             status.update(label="Writing the answer", state="complete",
                           expanded=False)
 
@@ -237,6 +280,16 @@ if question := st.chat_input("Ask about your documents"):
             "hybrid": outcome.trace.hybrid,
             "seconds": outcome.trace.seconds,
         }
+        if agentic is not None:
+            trace["agentic"] = {
+                "rewritten_query": agentic.rewritten_query,
+                "queries": agentic.queries,
+                "hops": agentic.hops,
+                "self_corrected": agentic.self_corrected,
+                "pool_size": agentic.pool_size,
+                "llm_calls": agentic.llm_calls,
+                "notes": agentic.notes,
+            }
 
         if mode is AnswerMode.NO_RESULTS:
             text = NO_RESULTS_MESSAGE

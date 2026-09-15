@@ -40,3 +40,15 @@ storage:
   collection: documents_hybrid
   # Points per Qdrant upsert request, for the same reason.
   upsert_batch: 128
+
+# Extra retrieval stages, all off by default. Each costs at least one LLM
+# call before the answer starts, on a question where reranking already
+# dominates. Turn them on per question in Settings and watch the trace -
+# "How this answer was found" reports how many calls each question made.
+agentic:
+  rewrite: false          # reword the question for search
+  multi_query: false      # search several phrasings, rerank the union once
+  multi_hop: false        # look for gaps and search again
+  self_correct: false     # draft an answer, check it, search again if thin
+  max_hops: 2
+  variants: 3

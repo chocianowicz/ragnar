@@ -78,6 +78,41 @@ def render(svc) -> dict:
                  "questions). Only applies when re-ranking is on.",
         )
 
+        st.markdown("**Extra reasoning steps**")
+        st.caption(
+            "Each adds at least one model call before the answer starts. "
+            "Off by default; none is validated against a golden set yet."
+        )
+        agentic_cfg = cfg.agentic
+        rewrite = st.checkbox(
+            "Reword the question for search",
+            value=bool(agentic_cfg.get("rewrite", False)),
+            help="Asks the model to turn the question into a better search "
+                 "query. Identifiers are preserved — changing a code loses "
+                 "the document that contains it.",
+        )
+        multi_query = st.checkbox(
+            "Search several phrasings",
+            value=bool(agentic_cfg.get("multi_query", False)),
+            help="Searches a few rewordings and re-ranks the combined pool "
+                 "once, against your actual question. Costs one model call, "
+                 "not one re-ranking pass per phrasing.",
+        )
+        multi_hop = st.checkbox(
+            "Look for gaps and search again",
+            value=bool(agentic_cfg.get("multi_hop", False)),
+            help="After the first pass, asks whether anything is missing "
+                 "and runs a follow-up search if so. One model call per "
+                 "round, plus another re-ranking pass.",
+        )
+        self_correct = st.checkbox(
+            "Check the draft answer",
+            value=bool(agentic_cfg.get("self_correct", False)),
+            help="Drafts an answer, judges whether the excerpts support it, "
+                 "and searches again if not. The most expensive option: two "
+                 "model calls before the answer you see.",
+        )
+
         st.markdown("**Chunking**")
         default_tokens = cfg.chunking.get("target_tokens", 500)
         default_overlap_pct = round(
@@ -128,4 +163,8 @@ def render(svc) -> dict:
 
     return {"model": model, "temperature": temperature,
             "floor": floor, "candidates": candidates,
-            "use_reranker": use_reranker}
+            "use_reranker": use_reranker,
+            # Per request, never written back onto the shared service — two
+            # people using the app must not change each other's settings.
+            "rewrite": rewrite, "multi_query": multi_query,
+            "multi_hop": multi_hop, "self_correct": self_correct}

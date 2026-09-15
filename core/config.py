@@ -107,6 +107,13 @@ class Config:
         return self._raw["retrieval"]["score_floor"]
 
     @property
+    def agentic(self) -> dict:
+        """Optional extra retrieval stages. Every one defaults to off: each
+        costs LLM calls on a question that is already slow, and none is
+        validated against a golden set yet."""
+        return self._raw.get("agentic") or {}
+
+    @property
     def hybrid(self) -> bool:
         """Whether new collections pair the dense vector with a lexical one."""
         return bool(self._raw["retrieval"].get("hybrid", True))

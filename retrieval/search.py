@@ -88,24 +88,73 @@ class Search:
         step = on_step or (lambda _label: None)
         floor = self.score_floor if score_floor is None else score_floor
         limit = self._candidates if candidates is None else candidates
-        hybrid = bool(getattr(self._store, "is_hybrid", False))
-        trace = SearchTrace(floor=floor, hybrid=hybrid)
+        trace = SearchTrace(floor=floor, hybrid=self.hybrid)
 
         step("Reading the question")
+        pool = self.retrieve(question, doc_ids=doc_ids, limit=limit,
+                             trace=trace, step=step)
+        trace.candidates = len(pool)
+        if not pool:
+            return SearchOutcome(refused=True, trace=trace)
+
+        return self.narrow(question, pool, score_floor=floor,
+                           use_reranker=use_reranker, trace=trace, step=step)
+
+    @property
+    def candidates(self) -> int:
+        """Default pool size. Public so a caller that assembles its own
+        pool can match it rather than guess."""
+        return self._candidates
+
+    @property
+    def hybrid(self) -> bool:
+        return bool(getattr(self._store, "is_hybrid", False))
+
+    def retrieve(self, question: str, doc_ids: list[str] | None = None,
+                 limit: int | None = None,
+                 trace: SearchTrace | None = None,
+                 step=None) -> list[SearchResult]:
+        """The raw candidate pool for one query — no reranking, no floor.
+
+        Public because the agentic layer runs several queries and wants to
+        rerank the union once, against the question the user actually
+        asked. Reaching into the embedder and store to do that would couple
+        it to internals that are free to change.
+        """
+        step = step or (lambda _label: None)
+        limit = self._candidates if limit is None else limit
+
         clock = time.perf_counter()
         vector = self._embedder.embed([question])[0]
-        trace.seconds["embed"] = time.perf_counter() - clock
+        if trace is not None:
+            trace.seconds["embed"] = (trace.seconds.get("embed", 0.0)
+                                      + time.perf_counter() - clock)
 
         step("Searching your documents" + (" (meaning and wording)"
-                                           if hybrid else ""))
+                                           if self.hybrid else ""))
         clock = time.perf_counter()
         # The question goes to the store as text as well as a vector: on a
         # hybrid collection that adds the lexical half, which is what
         # finds exact identifiers the embedder ranks nowhere near the top.
         pool = self._store.search(vector, limit=limit, doc_ids=doc_ids,
                                   text=question)
-        trace.seconds["search"] = time.perf_counter() - clock
-        trace.candidates = len(pool)
+        if trace is not None:
+            trace.seconds["search"] = (trace.seconds.get("search", 0.0)
+                                       + time.perf_counter() - clock)
+        return pool
+
+    def narrow(self, question: str, pool: list[SearchResult],
+               score_floor: float | None = None,
+               use_reranker: bool = True,
+               trace: SearchTrace | None = None,
+               step=None) -> SearchOutcome:
+        """Rerank a candidate pool against `question`, apply the floor, cut
+        to top_k. The half of find() the agentic layer reuses."""
+        step = step or (lambda _label: None)
+        floor = self.score_floor if score_floor is None else score_floor
+        trace = trace if trace is not None else SearchTrace(
+            floor=floor, hybrid=self.hybrid)
+        trace.candidates = trace.candidates or len(pool)
 
         if not pool:
             return SearchOutcome(refused=True, trace=trace)
@@ -117,7 +166,8 @@ class Search:
         step(f"Re-checking the {len(pool)} closest passages")
         clock = time.perf_counter()
         ranked = self._reranker.rerank(question, pool, self._top_k)
-        trace.seconds["rerank"] = time.perf_counter() - clock
+        trace.seconds["rerank"] = (trace.seconds.get("rerank", 0.0)
+                                   + time.perf_counter() - clock)
         trace.reranked = len(pool)
         trace.best_score = ranked[0].score if ranked else None
 

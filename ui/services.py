@@ -18,6 +18,7 @@ from history.chat_store import ChatStore
 from retrieval.embedder import OllamaEmbedder
 from retrieval.store import QdrantStore
 from retrieval.search import Search
+from retrieval.agentic import AgenticSearch
 from retrieval.reranker import BGEReranker
 from generation.llm import OllamaLLM
 from generation.answerer import Answerer
@@ -42,14 +43,24 @@ def build_services():
     worker = IngestWorker(storage, registry, pipeline)
     worker.start()   # resets stale PROCESSING rows on startup
 
+    search = Search(
+        embedder, store,
+        reranker=BGEReranker(cfg.reranker_model,
+                             max_length=cfg.reranker_max_length),
+        candidates=cfg.candidates, top_k=cfg.top_k,
+        score_floor=cfg.score_floor,
+    )
+    agentic_cfg = cfg.agentic
+    agentic = AgenticSearch(
+        search, llm,
+        max_hops=int(agentic_cfg.get("max_hops", 2)),
+        variants=int(agentic_cfg.get("variants", 3)),
+    )
+
     return {
         "cfg": cfg, "storage": storage, "registry": registry, "chats": chats,
-        "store": store, "pipeline": pipeline, "search": Search(
-            embedder, store, reranker=BGEReranker(cfg.reranker_model,
-                                 max_length=cfg.reranker_max_length),
-            candidates=cfg.candidates, top_k=cfg.top_k,
-            score_floor=cfg.score_floor),
-        "answerer": Answerer(llm), "worker": worker,
+        "store": store, "pipeline": pipeline, "search": search,
+        "agentic": agentic, "answerer": Answerer(llm), "worker": worker,
     }
 
 
