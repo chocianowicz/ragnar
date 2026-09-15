@@ -31,7 +31,7 @@ from retrieval.search import Search
 from generation.llm import OllamaLLM
 from generation import followup, injection
 from generation.answerer import Answerer, AnswerMode, classify
-from eval.metrics import refusal_accuracy, citation_accuracy
+from eval.metrics import refusal_accuracy, citation_accuracy, normalise
 
 ROOT = Path(__file__).parent
 
@@ -79,8 +79,11 @@ def check_corpus(store: QdrantStore, golden: list[dict]) -> None:
     measurement and means nothing. Cheap to check, and the failure mode it
     prevents is silent.
     """
+    # Normalised on both sides: the indexed filename is decomposed on
+    # macOS and the golden set's is precomposed, so a plain set difference
+    # reports a document that is sitting right there as missing.
     expected = {
-        src for entry in golden
+        normalise(src) for entry in golden
         if not entry.get("out_of_corpus")
         for src in entry.get("expected_sources", [])
     }
@@ -89,7 +92,7 @@ def check_corpus(store: QdrantStore, golden: list[dict]) -> None:
 
     # One cheap unfiltered probe; the payload carries the filename.
     indexed = {
-        r.chunk.filename
+        normalise(r.chunk.filename)
         for r in store.search([0.0] * store.dim, limit=10_000)
     }
     missing = sorted(expected - indexed)

@@ -67,3 +67,14 @@ def test_expect_refusal_defaults_to_out_of_corpus():
     cases = [{"out_of_corpus": True, "refused": True},
              {"out_of_corpus": False, "refused": False}]
     assert refusal_accuracy(cases) == 1.0
+
+
+def test_citation_accuracy_matches_across_unicode_normalisation():
+    """macOS stores filenames decomposed ("Me" + combining acute); anything
+    typed or copied is precomposed. Same name on screen, different string,
+    so a correct citation scored as a miss."""
+    cases = [{"out_of_corpus": False,
+              "citations": ["NDC 3.0 México_spanish.pdf, p. 22"],
+              "expected_sources": ["NDC 3.0 México_spanish.pdf"]}]
+
+    assert citation_accuracy(cases) == 1.0

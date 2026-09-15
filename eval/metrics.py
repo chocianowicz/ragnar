@@ -1,4 +1,16 @@
 import re
+import unicodedata
+
+
+def normalise(name: str) -> str:
+    """A filename in a form two sources can be compared in.
+
+    macOS stores filenames decomposed — "Me" plus a combining acute —
+    while anything typed, pasted or written in a config file is
+    precomposed. They render identically and compare unequal, which turns
+    a correct citation into a scored miss.
+    """
+    return unicodedata.normalize("NFC", name)
 
 
 def _should_refuse(case: dict) -> bool:
@@ -36,8 +48,8 @@ def citation_accuracy(cases: list[dict]) -> float:
 
     correct = 0
     for case in scored:
-        cited = " ".join(case["citations"])
-        if any(re.search(rf"\b{re.escape(src)}\b", cited)
+        cited = normalise(" ".join(case["citations"]))
+        if any(re.search(rf"\b{re.escape(normalise(src))}\b", cited)
                for src in case["expected_sources"]):
             correct += 1
     return correct / len(scored)
