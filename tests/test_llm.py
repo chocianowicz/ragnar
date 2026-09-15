@@ -86,3 +86,23 @@ def test_llm_answers_in_the_language_of_the_question():
     # or common Polish word
     assert any(t in reply.lower() for t in
                ["numer", "kontrakt", "wynosi", "to "])
+
+
+def test_keep_alive_is_sent_on_every_request():
+    """Ollama unloads a model after five idle minutes; without this the
+    next question pays a cold reload."""
+    client = StubClient({"message": {"content": "ok"}})
+    llm = OllamaLLM("http://x", "m", client=client)
+
+    llm.generate("sys", "user")
+
+    assert client.calls[0]["keep_alive"] == "10m"
+
+
+def test_keep_alive_is_configurable():
+    client = StubClient({"message": {"content": "ok"}})
+    llm = OllamaLLM("http://x", "m", client=client, keep_alive="1h")
+
+    llm.generate("sys", "user")
+
+    assert client.calls[0]["keep_alive"] == "1h"

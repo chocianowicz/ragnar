@@ -5,11 +5,16 @@ import httpx
 
 class OllamaLLM:
     def __init__(self, base_url: str, model: str, client=None,
-                 timeout: float = 300.0, temperature: float = 0.0):
+                 timeout: float = 300.0, temperature: float = 0.0,
+                 keep_alive: str = "10m"):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout = timeout
         self.temperature = temperature
+        # Sent on every request. Ollama's default is to unload a model
+        # after five idle minutes, so a multi-turn conversation with a
+        # pause in it would otherwise cold-reload on the next question.
+        self.keep_alive = keep_alive
         self._client = client or httpx.Client()
 
     def _payload(self, system: str, user: str, stream: bool,
@@ -30,6 +35,7 @@ class OllamaLLM:
             "model": model or self.model,
             "messages": messages,
             "stream": stream,
+            "keep_alive": self.keep_alive,
             "options": {
                 "temperature": self.temperature if temperature is None
                 else temperature,
