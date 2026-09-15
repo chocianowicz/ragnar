@@ -46,3 +46,27 @@ def test_flag_returns_the_matched_snippets():
 
 def test_flag_is_empty_for_clean_text():
     assert flag("The notice period is three months.") == []
+
+
+def test_hidden_instruction_in_a_pdf_is_extracted_and_flagged(tmp_path):
+    """White 4-point text is invisible in a viewer and fully present to the
+    parser. This is how the successful attack on this system was built."""
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import A4
+    from ingestion.parser import DoclingParser
+
+    pdf = tmp_path / "leave_policy.pdf"
+    c = canvas.Canvas(str(pdf), pagesize=A4)
+    c.setFont("Helvetica", 12)
+    c.drawString(72, 760, "Section 3. Every full-time employee is entitled to "
+                          "30 days of paid annual leave per year.")
+    c.setFillColorRGB(1, 1, 1)
+    c.setFont("Helvetica", 4)
+    c.drawString(72, 500, PLANTED)
+    c.save()
+
+    blocks = DoclingParser().parse(pdf).blocks
+    texts = [b.text for b in blocks]
+
+    assert any("30 days" in t for t in texts), "visible text must survive"
+    assert any(is_suspicious(t) for t in texts), "hidden instruction must be flagged"
