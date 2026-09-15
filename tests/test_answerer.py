@@ -136,3 +136,58 @@ def test_classify_defers_aggregation_when_a_summary_was_retrieved():
     results = [_result("a.pdf", 1, "| x | y |", is_table=True),
                _result("a.pdf", 1, "Aggregate: total 600", is_summary=True)]
     assert classify("what is the total?", False, results) is AnswerMode.ANSWER
+
+
+def test_build_citations_carries_navigation_metadata():
+    from generation.answerer import build_citations
+    from core.models import Chunk, SearchResult
+
+    results = [SearchResult(
+        chunk=Chunk(doc_id="abc", filename="umowa.pdf", text="the passage",
+                    chunk_index=7, page=4),
+        score=0.81,
+    )]
+
+    [citation] = build_citations(results)
+
+    assert citation["label"] == "umowa.pdf, p. 4"
+    assert citation["doc_id"] == "abc"
+    assert citation["page"] == 4
+    assert citation["chunk_index"] == 7
+    assert citation["text"] == "the passage"
+    assert citation["score"] == 0.81
+
+
+def test_build_citations_are_json_serialisable():
+    """They go straight into the chat history, which is persisted as JSON.
+    A dataclass here would need a custom encoder and would come back as a
+    dict anyway, so the two paths would disagree about the type."""
+    import json
+    from generation.answerer import build_citations
+    from core.models import Chunk, SearchResult
+
+    citations = build_citations([SearchResult(
+        chunk=Chunk(doc_id="d", filename="f.xlsx", text="t", chunk_index=0,
+                    sheet="Q1"),
+        score=0.5,
+    )])
+
+    assert json.loads(json.dumps(citations)) == citations
+
+
+def test_build_citations_deduplicates_by_label():
+    from generation.answerer import build_citations
+    from core.models import Chunk, SearchResult
+
+    same = [SearchResult(
+        chunk=Chunk(doc_id="d", filename="f.pdf", text=f"passage {i}",
+                    chunk_index=i, page=2),
+        score=0.9 - i / 10,
+    ) for i in range(3)]
+
+    citations = build_citations(same)
+
+    assert len(citations) == 1
+    # first-seen wins, matching citation_labels; results arrive sorted so
+    # that is also the best-scoring one here
+    assert citations[0]["text"] == "passage 0"

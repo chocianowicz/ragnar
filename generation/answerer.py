@@ -24,6 +24,40 @@ def citation_labels(results: list[SearchResult]) -> list[str]:
     return seen
 
 
+def build_citations(results: list[SearchResult]) -> list[dict]:
+    """Citations with enough metadata for the UI to show and open a source.
+
+    Deduplicated by label, first-seen order, same as citation_labels — but
+    carrying the passage that was actually used, so "show me where this
+    came from" is answered from what the model was given rather than from a
+    fresh lookup that might return something else.
+
+    Plain dicts, deliberately: these are written straight into the chat
+    history, which is persisted as JSON. A dataclass here would serialize
+    only with a custom encoder, and would come back as a dict on load
+    anyway — so the two paths would disagree about the type.
+    """
+    seen: set[str] = set()
+    citations: list[dict] = []
+    for result in results:
+        chunk = result.chunk
+        label = chunk.citation_label()
+        if label in seen:
+            continue
+        seen.add(label)
+        citations.append({
+            "label": label,
+            "doc_id": chunk.doc_id,
+            "filename": chunk.filename,
+            "page": chunk.page,
+            "sheet": chunk.sheet,
+            "chunk_index": chunk.chunk_index,
+            "score": round(float(result.score), 4),
+            "text": chunk.text,
+        })
+    return citations
+
+
 def build_excerpts(results: list[SearchResult]) -> list[tuple[str, str]]:
     """(citation_label, text) pairs for the prompt builder."""
     return [(r.chunk.citation_label(), r.chunk.text) for r in results]

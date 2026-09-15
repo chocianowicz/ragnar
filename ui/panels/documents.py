@@ -6,7 +6,10 @@ STATUS_ICONS = {"queued": "⏳", "processing": "⚙️", "done": "✅", "failed"
 
 
 def render(svc) -> None:
-    with st.expander("Documents", expanded=False):
+    # Opened automatically when a citation asks to show its document,
+    # otherwise the jump lands inside a collapsed panel and looks broken.
+    jumping = bool(st.session_state.get("open_doc_id"))
+    with st.expander("Documents", expanded=jumping):
         if "uploader_key" not in st.session_state:
             st.session_state.uploader_key = 0
 
@@ -146,5 +149,38 @@ def _status_strip_body(svc) -> None:
                         st.rerun()
 
         if doc.status.value == "done" and st.session_state.get(f"show_md_{doc.doc_id}"):
-            markdown = svc["storage"].read_markdown(doc.doc_id)
-            st.markdown(markdown or "_Not yet converted_")
+            _render_viewer(svc, doc)
+
+
+def _render_viewer(svc, doc) -> None:
+    """The converted document, plus the original to take away.
+
+    The original is offered as a download rather than opened directly: the
+    app runs in a container with no desktop and no access to the host's
+    file associations, so anything that shells out to `open` can only fail
+    silently. A download hands the real file to the browser, which does
+    have a PDF viewer.
+    """
+    page = None
+    if st.session_state.get("open_doc_id") == doc.doc_id:
+        page = st.session_state.pop("open_doc_page", None)
+        st.session_state.pop("open_doc_id", None)
+
+    original = svc["storage"].archived_path(doc.filename, doc.doc_id)
+    if original.exists():
+        st.download_button(
+            "⬇ Download the original file",
+            data=original.read_bytes(),
+            file_name=doc.filename,
+            key=f"dl_{doc.doc_id}",
+            help="Open it in your own PDF or spreadsheet viewer",
+        )
+    else:
+        st.caption("Original file not found — showing the converted text only")
+
+    if page:
+        st.info(f"Cited from page {page}. The converted text below is the "
+                f"whole document; use your browser's find to jump to it.")
+
+    markdown = svc["storage"].read_markdown(doc.doc_id)
+    st.markdown(markdown or "_Not yet converted_")
