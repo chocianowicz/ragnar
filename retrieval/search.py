@@ -33,14 +33,25 @@ class Search:
     def find(self, question: str,
              doc_ids: list[str] | None = None,
              score_floor: float | None = None,
+             candidates: int | None = None,
              use_reranker: bool = True) -> SearchOutcome:
         """Retrieve, optionally rerank, then apply the similarity floor.
 
         doc_ids=None searches the whole corpus; a list scopes retrieval to
         just those documents (e.g. a user-selected subset in the UI).
 
-        score_floor overrides self.score_floor for this one call, so the UI
-        can pass a per-request value without mutating shared state.
+        score_floor and candidates override the instance defaults for this
+        one call, so the UI can pass per-request values without mutating
+        shared state.
+
+        Widening `candidates` is the blunt lever for a question whose
+        answer the embedder ranks poorly. It costs linearly: the reranker
+        scores every candidate, measured at roughly 1.3s each on CPU, so
+        50 candidates doubles retrieval latency. It also cannot rescue an
+        answer the embedder ranks far down — an exact identifier in a large
+        reference table ranked 291st on the real corpus, because a code
+        carries almost no signal a dense vector can use. That case needs
+        lexical matching, not a longer list.
 
         use_reranker=False skips the cross-encoder entirely (much faster).
         The floor is not applied in that mode: raw vector-similarity scores
@@ -48,18 +59,17 @@ class Search:
         when retrieval finds nothing at all.
         """
         floor = self.score_floor if score_floor is None else score_floor
+        limit = self._candidates if candidates is None else candidates
         vector = self._embedder.embed([question])[0]
-        candidates = self._store.search(
-            vector, limit=self._candidates, doc_ids=doc_ids
-        )
+        pool = self._store.search(vector, limit=limit, doc_ids=doc_ids)
 
-        if not candidates:
+        if not pool:
             return SearchOutcome(refused=True)
 
         if not (use_reranker and self._reranker is not None):
-            return SearchOutcome(results=candidates[: self._top_k])
+            return SearchOutcome(results=pool[: self._top_k])
 
-        ranked = self._reranker.rerank(question, candidates, self._top_k)
+        ranked = self._reranker.rerank(question, pool, self._top_k)
         kept = [r for r in ranked if r.score >= floor]
 
         if not kept:

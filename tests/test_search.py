@@ -163,3 +163,46 @@ def test_disabling_the_reranker_still_refuses_an_empty_corpus():
     search = Search(FakeEmbedder(), StubStore([]),
                     reranker=StubReranker([]), score_floor=0.3)
     assert search.find("q", use_reranker=False).refused is True
+
+
+class LimitRecordingStore(StubStore):
+    def __init__(self, results):
+        super().__init__(results)
+        self.last_limit = None
+
+    def search(self, vector, limit, doc_ids=None):
+        self.last_limit = limit
+        return super().search(vector, limit, doc_ids)
+
+
+def test_candidate_count_defaults_to_the_configured_value():
+    store = LimitRecordingStore([_result("a")])
+    search = Search(FakeEmbedder(), store, reranker=StubReranker([0.9]),
+                    candidates=25, top_k=5, score_floor=0.3)
+
+    search.find("q")
+
+    assert store.last_limit == 25
+
+
+def test_candidate_count_can_be_overridden_per_request():
+    """Widening the pool is the UI's lever for a question the embedder
+    ranks poorly — per call, so one request cannot change another's."""
+    store = LimitRecordingStore([_result("a")])
+    search = Search(FakeEmbedder(), store, reranker=StubReranker([0.9]),
+                    candidates=25, top_k=5, score_floor=0.3)
+
+    search.find("q", candidates=60)
+
+    assert store.last_limit == 60
+
+
+def test_candidate_override_does_not_mutate_the_instance():
+    store = LimitRecordingStore([_result("a")])
+    search = Search(FakeEmbedder(), store, reranker=StubReranker([0.9]),
+                    candidates=25, top_k=5, score_floor=0.3)
+
+    search.find("q", candidates=60)
+    search.find("q")
+
+    assert store.last_limit == 25

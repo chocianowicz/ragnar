@@ -88,7 +88,8 @@ if question := st.chat_input("Ask about your documents"):
     with st.chat_message("assistant"):
         outcome = svc["search"].find(
             question, doc_ids=doc_ids_filter,
-            score_floor=query["floor"], use_reranker=query["use_reranker"],
+            score_floor=query["floor"], candidates=query["candidates"],
+            use_reranker=query["use_reranker"],
         )
         mode = classify(question, outcome.refused, outcome.results)
 

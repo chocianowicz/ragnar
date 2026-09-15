@@ -50,6 +50,17 @@ def render(svc) -> dict:
         )
 
         st.markdown("**Retrieval**")
+        candidates = st.slider(
+            "Candidates considered", min_value=10, max_value=100,
+            value=int(cfg.candidates), step=5,
+            help="How many chunks are fetched before re-ranking picks the "
+                 "best few. More can rescue an answer the search ranks "
+                 "poorly, but the re-ranker scores every one of them — "
+                 "roughly a second each — so doubling this roughly doubles "
+                 "the wait. It will not help when the answer is ranked far "
+                 "down: an exact code in a large table can sit hundreds of "
+                 "places deep, which no realistic setting here reaches.",
+        )
         use_reranker = st.checkbox(
             "Re-rank results for accuracy", value=True,
             help="A second, more accurate pass over retrieved chunks. On by "
@@ -116,4 +127,5 @@ def render(svc) -> dict:
             st.rerun()
 
     return {"model": model, "temperature": temperature,
-            "floor": floor, "use_reranker": use_reranker}
+            "floor": floor, "candidates": candidates,
+            "use_reranker": use_reranker}
