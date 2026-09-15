@@ -387,7 +387,6 @@ def answer_job(job, question, history, doc_ids_filter, query):
         agentic = None
 
     mode = classify(question, outcome.refused, outcome.results)
-    job.mode = mode.name
     job.trace = {
         "candidates": outcome.trace.candidates,
         "reranked": outcome.trace.reranked,
@@ -444,7 +443,6 @@ def answer_job(job, question, history, doc_ids_filter, query):
         # so no sources: they did not produce this.
         job.chunks.clear()
         job.citations = []
-        job.mode = AnswerMode.NO_RESULTS.name
         job.append(NO_RESULTS_MESSAGE)
         job.trace["model_declined"] = True
         job.trace["related"] = citation_labels(outcome.results)
@@ -469,7 +467,7 @@ if question := st.chat_input("Ask about your documents",
                       chat_title(st.session_state.messages),
                       st.session_state.messages)
     jobs.start(
-        st.session_state.current_chat_id, question,
+        st.session_state.current_chat_id,
         lambda job: answer_job(job, question, history, doc_ids_filter, query),
     )
     st.rerun()
@@ -490,7 +488,7 @@ if active is not None:
             commit(active)
             jobs.pop(active.chat_id)
             st.rerun()
-        else:  # noqa: RET505
+        else:
             st.caption(f"{active.status}…  ·  {active.elapsed():.0f}s")
 
 if jobs.any_running():

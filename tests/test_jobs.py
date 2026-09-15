@@ -16,7 +16,7 @@ def test_a_job_runs_without_blocking_the_caller():
         job.append("done")
 
     started = time.time()
-    registry.start("chat1", "q", work)
+    registry.start("chat1", work)
     assert time.time() - started < 0.5      # start() returned immediately
     assert registry.running("chat1")
 
@@ -36,7 +36,7 @@ def test_partial_text_is_readable_while_the_job_runs():
         time.sleep(0.2)
         job.append("and half")
 
-    registry.start("chat1", "q", work)
+    registry.start("chat1", work)
     seen.wait(timeout=5)
     assert registry.get("chat1").text == "half "
 
@@ -52,7 +52,7 @@ def test_a_failing_job_records_the_error_and_still_finishes():
     def work(job):
         raise RuntimeError("ollama is down")
 
-    registry.start("chat1", "q", work)
+    registry.start("chat1", work)
     _wait_done(registry, "chat1")
 
     job = registry.get("chat1")
@@ -62,8 +62,8 @@ def test_a_failing_job_records_the_error_and_still_finishes():
 
 def test_jobs_are_isolated_per_chat():
     registry = JobRegistry()
-    registry.start("a", "q1", lambda job: job.append("first"))
-    registry.start("b", "q2", lambda job: job.append("second"))
+    registry.start("a", lambda job: job.append("first"))
+    registry.start("b", lambda job: job.append("second"))
     _wait_done(registry, "a")
     _wait_done(registry, "b")
 
@@ -73,7 +73,7 @@ def test_jobs_are_isolated_per_chat():
 
 def test_popping_a_job_clears_it():
     registry = JobRegistry()
-    registry.start("a", "q", lambda job: job.append("x"))
+    registry.start("a", lambda job: job.append("x"))
     _wait_done(registry, "a")
 
     popped = registry.pop("a")
@@ -96,14 +96,14 @@ def test_status_is_readable_while_running():
         reached.set()
         time.sleep(0.1)
 
-    registry.start("a", "q", work)
+    registry.start("a", work)
     reached.wait(timeout=5)
     assert "25 closest" in registry.get("a").status
     _wait_done(registry, "a")
 
 
 def test_appending_from_several_threads_loses_nothing():
-    job = Job(chat_id="a", question="q")
+    job = Job(chat_id="a")
     threads = [threading.Thread(target=lambda: [job.append("x")
                                                 for _ in range(200)])
                for _ in range(4)]
@@ -133,7 +133,7 @@ def test_a_finished_job_is_reported_whatever_chat_is_on_screen():
     """The walk-away case: the answer finishes while you are elsewhere, and
     something has to notice and file it."""
     registry = JobRegistry()
-    registry.start("chat-a", "q", lambda job: job.append("answer a"))
+    registry.start("chat-a", lambda job: job.append("answer a"))
     _wait_done(registry, "chat-a")
 
     [finished] = registry.finished()
@@ -145,7 +145,7 @@ def test_a_finished_job_is_reported_whatever_chat_is_on_screen():
 def test_finished_does_not_report_jobs_still_running():
     registry = JobRegistry()
     release = threading.Event()
-    registry.start("a", "q", lambda job: release.wait(timeout=5))
+    registry.start("a", lambda job: release.wait(timeout=5))
 
     assert registry.finished() == []
 

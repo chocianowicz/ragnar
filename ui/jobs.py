@@ -29,7 +29,6 @@ from dataclasses import dataclass, field
 class Job:
     """One question being answered."""
     chat_id: str
-    question: str
     started_at: float = field(default_factory=time.time)
     status: str = "Working"        # last reported stage, for the UI
     chunks: list[str] = field(default_factory=list)
@@ -39,7 +38,6 @@ class Job:
     # finished turn.
     citations: list[dict] = field(default_factory=list)
     trace: dict = field(default_factory=dict)
-    mode: str = ""
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     @property
@@ -88,14 +86,14 @@ class JobRegistry:
         with self._lock:
             return self._jobs.pop(chat_id, None)
 
-    def start(self, chat_id: str, question: str, work) -> Job:
+    def start(self, chat_id: str, work) -> Job:
         """Run `work(job)` on a thread. Returns the Job immediately.
 
         `work` is handed the Job and reports into it. Any exception it
         raises is recorded rather than lost on a thread nobody is
         watching.
         """
-        job = Job(chat_id=chat_id, question=question)
+        job = Job(chat_id=chat_id)
         with self._lock:
             self._jobs[chat_id] = job
 
