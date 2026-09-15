@@ -75,6 +75,10 @@ class JobRegistry:
         job = self.get(chat_id)
         return job is not None and not job.done
 
+    def any_running(self) -> bool:
+        with self._lock:
+            return any(not j.done for j in self._jobs.values())
+
     def finished(self) -> list[Job]:
         """Completed jobs, whichever chat they belong to."""
         with self._lock:

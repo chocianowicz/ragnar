@@ -31,6 +31,40 @@ def job_registry() -> JobRegistry:
 
 jobs = job_registry()
 
+
+def commit(job) -> None:
+    """Move a finished job into its conversation and persist it.
+
+    Goes through the store rather than session state, because the job's
+    chat may not be the one on screen — you can ask a question, wander off
+    to another conversation, and the answer still has to land in the chat
+    it belongs to.
+    """
+    saved = svc["chats"].get(job.chat_id)
+    messages = list(saved.messages) if saved else []
+    messages.append(
+        {"role": "assistant",
+         "content": job.text or (f"Something went wrong: {job.error}"
+                                 if job.error else ""),
+         "citations": job.citations, "trace": job.trace}
+    )
+    svc["chats"].save(job.chat_id, chat_title(messages), messages)
+    if st.session_state.current_chat_id == job.chat_id:
+        st.session_state.messages = messages
+
+
+def reap_finished_jobs() -> None:
+    """Land any answer that finished while its chat was not on screen.
+
+    Without this, walking away from a question means the answer completes
+    on its thread and is never written anywhere — the work is done and
+    silently thrown away, which is the failure this whole mechanism exists
+    to prevent.
+    """
+    for job in jobs.finished():
+        commit(job)
+        jobs.pop(job.chat_id)
+
 try:
     httpx.get(f"{svc['cfg'].ollama_url}/api/tags", timeout=5).raise_for_status()
 except Exception:
@@ -134,13 +168,23 @@ section[data-testid="stSidebar"] div[data-testid="stExpander"] summary p {
 </style>
 """
 
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+# None until the current conversation has been saved for the first time.
+st.session_state.setdefault("current_chat_id", None)
+
+# Land any answer that finished while this chat was not on screen —
+# before the transcript is drawn, so it appears in this pass rather than
+# sitting invisible until the next thing the user clicks.
+reap_finished_jobs()
+
 with st.sidebar:
     st.title("RAGnar - local RAG chat app")
     st.markdown(APP_CSS, unsafe_allow_html=True)
 
     query = settings.render(svc)
     documents.render(svc)
-    chats.render(svc)
+    chats.render(svc, jobs)
 
 all_docs = svc["registry"].all()
 if not all_docs:
@@ -277,11 +321,6 @@ def render_trace(trace, key: str) -> None:
                 st.caption(f"⚠ {note}")
 
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-# None until the current conversation has been saved for the first time.
-st.session_state.setdefault("current_chat_id", None)
-
 for turn, message in enumerate(st.session_state.messages):
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
@@ -362,40 +401,6 @@ def answer_job(job, question, history, doc_ids_filter, query):
         job.append(piece)
 
 
-def commit(job) -> None:
-    """Move a finished job into its conversation and persist it.
-
-    Goes through the store rather than session state, because the job's
-    chat may not be the one on screen — you can ask a question, wander off
-    to another conversation, and the answer still has to land in the chat
-    it belongs to.
-    """
-    saved = svc["chats"].get(job.chat_id)
-    messages = list(saved.messages) if saved else []
-    messages.append(
-        {"role": "assistant",
-         "content": job.text or (f"Something went wrong: {job.error}"
-                                 if job.error else ""),
-         "citations": job.citations, "trace": job.trace}
-    )
-    svc["chats"].save(job.chat_id, chat_title(messages), messages)
-    if st.session_state.current_chat_id == job.chat_id:
-        st.session_state.messages = messages
-
-
-def reap_finished_jobs() -> None:
-    """Land any answer that finished while its chat was not on screen.
-
-    Without this, walking away from a question means the answer completes
-    on its thread and is never written anywhere — the work is done and
-    silently thrown away, which is the failure this whole mechanism exists
-    to prevent.
-    """
-    for job in jobs.finished():
-        commit(job)
-        jobs.pop(job.chat_id)
-
-
 if question := st.chat_input("Ask about your documents",
                              disabled=jobs.running(
                                  st.session_state.current_chat_id or "")):
@@ -419,8 +424,6 @@ if question := st.chat_input("Ask about your documents",
     st.rerun()
 
 
-reap_finished_jobs()
-
 active = jobs.get(st.session_state.current_chat_id or "")
 if active is not None:
     with st.chat_message("assistant"):
@@ -436,9 +439,11 @@ if active is not None:
             st.caption("This keeps running if you open another chat or "
                        "a source — come back and it will be here.")
 
-    if not active.done:
-        # Redraw until it finishes. A rerun costs a repaint; the answer is
-        # on a thread that does not notice.
-        time.sleep(1.0)
-        st.rerun()
+if jobs.any_running():
+    # Redraw while anything is still working — including a question left
+    # running in another conversation, so its indicator stays honest and
+    # its answer is filed as soon as it lands. A rerun costs a repaint;
+    # the answer is on a thread that does not notice.
+    time.sleep(1.0)
+    st.rerun()
 
