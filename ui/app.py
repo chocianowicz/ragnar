@@ -387,26 +387,10 @@ def answer_job(job, question, history, doc_ids_filter, query):
         agentic = None
 
     mode = classify(question, outcome.refused, outcome.results)
-    job.trace = {
-        "candidates": outcome.trace.candidates,
-        "reranked": outcome.trace.reranked,
-        "kept": outcome.trace.kept,
-        "floor": outcome.trace.floor,
-        "best_score": outcome.trace.best_score,
-        "hybrid": outcome.trace.hybrid,
-        "seconds": outcome.trace.seconds,
-        "resolved_question": search_question if resolved else None,
-    }
+    job.trace = outcome.trace.as_dict()
+    job.trace["resolved_question"] = search_question if resolved else None
     if agentic is not None:
-        job.trace["agentic"] = {
-            "rewritten_query": agentic.rewritten_query,
-            "queries": agentic.queries,
-            "hops": agentic.hops,
-            "self_corrected": agentic.self_corrected,
-            "pool_size": agentic.pool_size,
-            "llm_calls": agentic.llm_calls,
-            "notes": agentic.notes,
-        }
+        job.trace["agentic"] = agentic.as_dict()
 
     if mode is AnswerMode.NO_RESULTS:
         job.append(NO_RESULTS_MESSAGE)

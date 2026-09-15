@@ -1,3 +1,4 @@
+import dataclasses
 import time
 from dataclasses import dataclass, field
 
@@ -24,6 +25,15 @@ class SearchTrace:
     best_score: float | None = None
     hybrid: bool = False
     seconds: dict[str, float] = field(default_factory=dict)
+
+    def as_dict(self) -> dict:
+        """Every field, for the UI and the chat history.
+
+        dataclasses.asdict rather than a hand-written literal: the
+        previous version named each field, so adding one meant the UI
+        quietly never showed it.
+        """
+        return dataclasses.asdict(self)
 
 
 @dataclass

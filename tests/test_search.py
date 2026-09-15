@@ -206,3 +206,18 @@ def test_candidate_override_does_not_mutate_the_instance():
     search.find("q")
 
     assert store.last_limit == 25
+
+
+def test_search_trace_serialises_every_field():
+    """Hand-copying the fields meant a new one silently never reached the
+    UI. asdict cannot forget."""
+    import dataclasses
+    from retrieval.search import SearchTrace
+
+    trace = SearchTrace(candidates=25, reranked=25, kept=5, floor=0.55,
+                        best_score=0.73, hybrid=True, seconds={"embed": 2.0})
+    data = trace.as_dict()
+
+    assert set(data) == {f.name for f in dataclasses.fields(SearchTrace)}
+    assert data["kept"] == 5
+    assert data["seconds"] == {"embed": 2.0}

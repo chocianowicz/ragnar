@@ -27,6 +27,7 @@ called anyway.
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
 from dataclasses import dataclass, field
 
@@ -49,6 +50,15 @@ class AgenticTrace:
     pool_size: int = 0
     llm_calls: int = 0
     notes: list[str] = field(default_factory=list)
+
+    def as_dict(self) -> dict:
+        """Every field, for the UI and the chat history.
+
+        dataclasses.asdict rather than a hand-written literal: the
+        previous version named each field, so adding one meant the UI
+        quietly never showed it.
+        """
+        return dataclasses.asdict(self)
 
 
 def _fuse(results: list[SearchResult], cap: int) -> list[SearchResult]:

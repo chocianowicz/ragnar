@@ -304,3 +304,16 @@ def test_widening_does_not_mutate_the_pool_it_was_given():
                    lambda _label: None)
 
     assert pool == before
+
+
+def test_agentic_trace_serialises_every_field():
+    import dataclasses
+    from retrieval.agentic import AgenticTrace
+
+    trace = AgenticTrace(rewritten_query="x", queries=["a", "b"], hops=1,
+                         self_corrected=True, pool_size=25, llm_calls=2,
+                         notes=["n"])
+    data = trace.as_dict()
+
+    assert set(data) == {f.name for f in dataclasses.fields(AgenticTrace)}
+    assert data["queries"] == ["a", "b"]
