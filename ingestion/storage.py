@@ -81,12 +81,19 @@ class Storage:
         shutil.copy(str(src), str(self.inbox_path(doc_id, filename)))
         return True
 
+    # Stated rather than inherited from the process locale. The corpus is
+    # Polish and English, and converted/ is the cache a re-index would have
+    # to be rebuilt from, so this is the wrong place to let an environment
+    # variable decide whether "ż" survives a round trip.
+    ENCODING = "utf-8"
+
     def write_converted(self, doc_id: str, markdown: str) -> None:
-        (self.converted / f"{doc_id}.md").write_text(markdown)
+        (self.converted / f"{doc_id}.md").write_text(
+            markdown, encoding=self.ENCODING)
 
     def read_markdown(self, doc_id: str) -> str | None:
         path = self.converted / f"{doc_id}.md"
-        return path.read_text() if path.exists() else None
+        return path.read_text(encoding=self.ENCODING) if path.exists() else None
 
     def remove_converted(self, doc_id: str) -> None:
         (self.converted / f"{doc_id}.md").unlink(missing_ok=True)

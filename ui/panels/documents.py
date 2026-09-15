@@ -51,8 +51,41 @@ def render(svc) -> None:
         _status_strip(svc)
 
 
-@st.fragment(run_every="2s")
+# The strip polls so an in-progress ingest shows its countdown without the
+# user touching anything. Nothing is ingesting most of the time, though,
+# and a two-second poll for the life of the session is the only thing
+# keeping a fully idle app busy. Two fragments, one interval each; the
+# caller picks based on whether the queue is actually doing anything.
+IDLE_POLL = "30s"
+BUSY_POLL = "2s"
+
+
 def _status_strip(svc) -> None:
+    processing, queued, _ = svc["registry"].ingest_eta()
+    if processing or queued:
+        _status_strip_busy(svc)
+    else:
+        _status_strip_idle(svc)
+
+
+@st.fragment(run_every=BUSY_POLL)
+def _status_strip_busy(svc) -> None:
+    _, queued, _ = svc["registry"].ingest_eta()
+    _status_strip_body(svc)
+    # The parent chose this fragment, so only the parent can hand back to
+    # the idle one. Rerun the app once when the queue drains — a single
+    # extra rerun per ingest, which also refreshes everything else that was
+    # waiting on the document becoming available.
+    if not queued and not svc["registry"].counts().get("processing"):
+        st.rerun(scope="app")
+
+
+@st.fragment(run_every=IDLE_POLL)
+def _status_strip_idle(svc) -> None:
+    _status_strip_body(svc)
+
+
+def _status_strip_body(svc) -> None:
     processing, queued, eta = svc["registry"].ingest_eta()
 
     if processing or queued:

@@ -23,7 +23,12 @@ services:
       - qdrant
 
   qdrant:
-    image: qdrant/qdrant:latest
+    # Pinned deliberately. The index lives in a named volume with no
+    # documented rebuild path (see README, "known gaps"), so a floating tag
+    # means a future `docker compose pull` can bring a storage format the
+    # existing volume disagrees with — on a tool whose whole premise is
+    # running offline and unattended for a small team. Bump on purpose.
+    image: qdrant/qdrant:v1.18.3
     restart: unless-stopped
     ports:
       - "6333:6333"

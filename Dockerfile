@@ -10,6 +10,12 @@ WORKDIR /app
 # CPU-only torch — saves roughly 2GB over the default CUDA build
 ENV PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
 
+# The corpus is Polish and English. Python's locale coercion happens to
+# land on UTF-8 in this base image, so nothing is broken today — but that
+# is an inherited default doing load-bearing work for every path that
+# touches text. Make it explicit so it cannot drift with the base image.
+ENV PYTHONUTF8=1
+
 # The editable install (`pip install -e .` below) runs before source code is
 # copied into the image, so its package-discovery snapshot is always empty —
 # setuptools finds nothing to map at that point. `streamlit run ui/app.py`

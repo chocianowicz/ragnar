@@ -67,6 +67,17 @@ def test_remove_converted_deletes_artifacts(storage):
     assert storage.read_markdown("d1") is None
 
 
+def test_converted_markdown_round_trips_polish_characters(storage):
+    """The cache a re-index would be rebuilt from, on a PL/EN corpus - it
+    should not be the process locale deciding whether "ż" survives."""
+    markdown = "# Umowa\n\nNajwyższa łączna kwota: 12 345,67 zł — §4 ust. 2"
+    storage.write_converted("d1", markdown)
+
+    assert storage.read_markdown("d1") == markdown
+    raw = (storage.converted / "d1.md").read_bytes()
+    assert raw.decode("utf-8") == markdown
+
+
 def test_restore_to_inbox_round_trips_an_archived_original(storage):
     src = storage.inbox / "report.pdf"
     src.write_bytes(b"the original content")
