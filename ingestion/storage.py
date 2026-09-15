@@ -26,8 +26,41 @@ class Storage:
                 digest.update(block)
         return digest.hexdigest()
 
-    def archive(self, path: Path, doc_id: str) -> Path:
-        target = self.originals / f"{path.stem}.{doc_id[:8]}{path.suffix}"
+    @staticmethod
+    def doc_id_for_bytes(data: bytes) -> str:
+        """The same id as doc_id(), for content not yet written to disk.
+
+        Lets an upload be named by its id before it lands in the inbox,
+        instead of being written under a caller-supplied name and hashed
+        afterwards.
+        """
+        return hashlib.sha256(data).hexdigest()
+
+    def inbox_path(self, doc_id: str, filename: str) -> Path:
+        """Where this document waits to be ingested.
+
+        Keyed by doc_id, not by filename. The registry is keyed by content
+        hash, so a filename-keyed inbox lets two different files that happen
+        to share a name collide: the second write replaces the first's bytes
+        while both ids sit in the queue, and the first id is then ingested
+        from the second file's content - indexed, marked done, and cited
+        under a hash that does not describe it.
+
+        Mirrors archive()'s naming so the two directories read alike.
+        """
+        name = Path(filename)
+        return self.inbox / f"{name.stem}.{doc_id[:8]}{name.suffix}"
+
+    def archive(self, path: Path, doc_id: str,
+                filename: str | None = None) -> Path:
+        """Move an ingested file out of the inbox and into originals.
+
+        `filename` is the display name. It has to be passed explicitly now
+        that the inbox names files by doc_id: deriving the archive name from
+        path.stem would fold that id into the name a second time, and
+        archived_path() would no longer find what this wrote.
+        """
+        target = self.archived_path(filename or path.name, doc_id)
         shutil.move(str(path), str(target))
         return target
 
@@ -45,7 +78,7 @@ class Storage:
         src = self.archived_path(filename, doc_id)
         if not src.exists():
             return False
-        shutil.copy(str(src), str(self.inbox / filename))
+        shutil.copy(str(src), str(self.inbox_path(doc_id, filename)))
         return True
 
     def write_converted(self, doc_id: str, markdown: str) -> None:

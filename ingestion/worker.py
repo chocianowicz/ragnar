@@ -30,15 +30,23 @@ class IngestWorker:
             return False
 
         self._registry.mark_processing(doc.doc_id)
-        path = self._storage.inbox / doc.filename
+        path = self._storage.inbox_path(doc.doc_id, doc.filename)
+        if not path.exists():
+            # Documents queued before the inbox was keyed by doc_id are
+            # still sitting under their bare filename. Ingest them where
+            # they are rather than failing an upgrade in place.
+            legacy = self._storage.inbox / doc.filename
+            if legacy.exists():
+                path = legacy
 
         try:
             if not path.exists():
                 raise FileNotFoundError(f"{doc.filename} missing from inbox")
 
-            result = self._pipeline.ingest(path, doc.doc_id)
+            result = self._pipeline.ingest(path, doc.doc_id,
+                                           filename=doc.filename)
             self._storage.write_converted(doc.doc_id, result.markdown)
-            self._storage.archive(path, doc.doc_id)
+            self._storage.archive(path, doc.doc_id, filename=doc.filename)
             self._registry.mark_done(doc.doc_id, result.chunk_count)
         except Exception as exc:
             # Original deliberately stays in inbox for inspection.

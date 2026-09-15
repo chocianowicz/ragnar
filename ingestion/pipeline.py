@@ -27,9 +27,16 @@ class Pipeline:
         """
         self._chunker = chunker
 
-    def ingest(self, path: Path, doc_id: str) -> IngestResult:
+    def ingest(self, path: Path, doc_id: str,
+               filename: str | None = None) -> IngestResult:
+        """Ingest the file at `path`, recorded under `doc_id`.
+
+        `filename` is what citations will say. It is passed separately
+        because the inbox names files by doc_id — path.name is a storage
+        detail, and using it would put a content hash in every citation.
+        """
         parsed = self._parser.parse(path)
-        chunks = self._chunker.chunk(parsed, doc_id, path.name)
+        chunks = self._chunker.chunk(parsed, doc_id, filename or path.name)
 
         # Replace wholesale so stale and fresh chunks never coexist.
         self._store.delete_by_doc(doc_id)

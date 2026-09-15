@@ -16,10 +16,15 @@ def render(svc) -> None:
         )
         if uploaded and st.button("Upload", type="primary"):
             for file in uploaded:
-                target = svc["storage"].inbox / file.name
-                target.write_bytes(file.getbuffer())
-                svc["registry"].add(svc["storage"].doc_id(target), file.name,
-                                    target.stat().st_size)
+                # Hash before writing, so the file lands under its own
+                # doc_id. Naming the inbox entry after the upload instead
+                # lets two files that share a name overwrite each other,
+                # and the survivor gets indexed under both ids.
+                data = file.getbuffer()
+                doc_id = svc["storage"].doc_id_for_bytes(data)
+                target = svc["storage"].inbox_path(doc_id, file.name)
+                target.write_bytes(data)
+                svc["registry"].add(doc_id, file.name, target.stat().st_size)
             # Force the uploader widget to reset to empty on the next render.
             st.session_state.uploader_key += 1
             st.rerun()
