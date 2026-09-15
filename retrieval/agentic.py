@@ -51,6 +51,21 @@ class AgenticTrace:
     notes: list[str] = field(default_factory=list)
 
 
+def _fuse(results: list[SearchResult], cap: int) -> list[SearchResult]:
+    """Best-scoring instance of each chunk, highest first, capped.
+
+    Used for both the multi-query union and each widening hop: the same
+    three lines were written out in both places, and a difference between
+    them would have been a silent behaviour change.
+    """
+    best: dict[str, SearchResult] = {}
+    for result in results:
+        current = best.get(result.chunk.key())
+        if current is None or result.score > current.score:
+            best[result.chunk.key()] = result
+    return sorted(best.values(), key=lambda r: r.score, reverse=True)[:cap]
+
+
 class AgenticSearch:
     """Search with optional query expansion and follow-up retrieval.
 
@@ -175,20 +190,15 @@ class AgenticSearch:
         work here is milliseconds — the time in a question is reranking,
         which happens once, after this.
         """
-        best: dict[str, SearchResult] = {}
+        found: list[SearchResult] = []
         for query in queries:
-            for result in self._search.retrieve(query, doc_ids=doc_ids,
-                                                limit=limit):
-                key = result.chunk.key()
-                current = best.get(key)
-                if current is None or result.score > current.score:
-                    best[key] = result
+            found += self._search.retrieve(query, doc_ids=doc_ids,
+                                           limit=limit)
         # Keep the pool the same size the reranker would have seen anyway,
         # so extra phrasings improve what is in the pool without making the
         # expensive stage any slower.
         cap = limit if limit is not None else self._search.candidates
-        return sorted(best.values(), key=lambda r: r.score,
-                      reverse=True)[:cap]
+        return _fuse(found, cap)
 
     def _follow_up(self, question, outcome, pool, doc_ids, limit,
                    score_floor, use_reranker, multi_hop, self_correct,
@@ -220,18 +230,18 @@ class AgenticSearch:
 
     def _widen(self, question, extra_query, pool, doc_ids, limit,
                score_floor, use_reranker, step):
-        """Add one query's candidates to the pool and rerank the lot."""
-        pool.extend(self._search.retrieve(extra_query, doc_ids=doc_ids,
-                                          limit=limit))
-        deduped: dict[str, SearchResult] = {}
-        for result in pool:
-            key = result.chunk.key()
-            if key not in deduped or result.score > deduped[key].score:
-                deduped[key] = result
+        """Rerank the pool plus one query's extra candidates.
+
+        Returns a new pool rather than growing the caller's: the previous
+        version extended the list it was passed, which is invisible from
+        the signature and compounds over hops.
+        """
+        extra = self._search.retrieve(extra_query, doc_ids=doc_ids,
+                                      limit=limit)
         cap = limit if limit is not None else self._search.candidates
-        widened = sorted(deduped.values(), key=lambda r: r.score,
-                         reverse=True)[:cap]
-        return self._search.narrow(question, widened, score_floor=score_floor,
+        widened = _fuse(list(pool) + extra, cap)
+        return self._search.narrow(question, widened,
+                                   score_floor=score_floor,
                                    use_reranker=use_reranker, step=step)
 
     def _correct(self, question, outcome, pool, doc_ids, limit, score_floor,

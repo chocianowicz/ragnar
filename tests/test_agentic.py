@@ -276,3 +276,31 @@ def test_each_stage_is_individually_optional(flag):
     outcome, _ = agentic.find("q", **{flag: True})
 
     assert outcome.results
+
+
+def test_fuse_keeps_the_best_score_per_chunk_and_caps():
+    from retrieval.agentic import _fuse
+
+    results = [_result("a", index=0, score=0.2),
+               _result("a-again", index=0, score=0.9),   # same key, better
+               _result("b", index=1, score=0.5),
+               _result("c", index=2, score=0.1)]
+
+    fused = _fuse(results, cap=2)
+
+    assert [r.score for r in fused] == [0.9, 0.5]
+    assert fused[0].chunk.text == "a-again"
+
+
+def test_widening_does_not_mutate_the_pool_it_was_given():
+    """It used to extend the caller's list in place, which is invisible
+    from the signature and surprising on the second hop."""
+    store = RecordingStore([_result("extra", index=9)])
+    agentic, _ = _agentic(store, ScriptedLLM())
+    pool = [_result("original", index=0)]
+    before = list(pool)
+
+    agentic._widen("q", "follow up", pool, None, None, 0.3, True,
+                   lambda _label: None)
+
+    assert pool == before
