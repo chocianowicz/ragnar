@@ -1,4 +1,5 @@
 import uuid
+from urllib.parse import quote
 
 import httpx
 import streamlit as st
@@ -26,6 +27,48 @@ except Exception:
     )
     if st.button("Recheck"):
         st.rerun()
+    st.stop()
+
+
+def render_document_page(doc_id: str, page: str | None) -> None:
+    """A standalone reader for one document, opened from a citation.
+
+    This is its own page rather than an expanding panel so a citation can
+    be opened in a new tab and kept beside the conversation — checking a
+    source should not cost you your place in the chat.
+
+    The converted text is shown rather than the original file because that
+    is what the citation refers to: page and sheet provenance is recorded
+    during conversion. The original is offered as a download, since the
+    app runs in a container with no access to the browser's file handlers
+    and cannot serve the raw bytes as a URL without static file serving
+    turned on.
+    """
+    doc = svc["registry"].get(doc_id)
+    if doc is None:
+        st.error("That document is no longer indexed.")
+        return
+
+    st.title(doc.filename)
+    if page:
+        st.caption(f"Cited from page {page} — use your browser's find "
+                   f"(⌘F / Ctrl-F) to jump to the passage.")
+
+    original = svc["storage"].archived_path(doc.filename, doc.doc_id)
+    if original.exists():
+        st.download_button("⬇ Download the original file",
+                           data=original.read_bytes(),
+                           file_name=doc.filename, key="reader_download")
+    else:
+        st.caption("Original file not found — showing the converted text only.")
+
+    st.divider()
+    st.markdown(svc["storage"].read_markdown(doc_id) or "_Not yet converted_")
+
+
+if "doc" in st.query_params:
+    render_document_page(st.query_params["doc"],
+                         st.query_params.get("page"))
     st.stop()
 
 SIDEBAR_HEADER_CSS = """
@@ -69,13 +112,13 @@ doc_ids_filter = (
 )
 
 
-def render_sources(citations: list, key_prefix: str) -> None:
+def render_sources(citations: list) -> None:
     """Show each cited passage, with a way into the document it came from.
 
     Citations saved before this existed are plain strings; render those as
     the captions they used to be rather than dropping older conversations.
     """
-    for i, citation in enumerate(citations):
+    for citation in citations:
         if not isinstance(citation, dict):
             st.caption(str(citation))
             continue
@@ -91,15 +134,15 @@ def render_sources(citations: list, key_prefix: str) -> None:
                 .replace("\n", "\n> ")
             )
             doc_id = citation.get("doc_id")
-            if doc_id and st.button(
-                "Open this document",
-                key=f"{key_prefix}_open_{i}",
-                help="Show the converted document in the Documents panel",
-            ):
-                st.session_state["open_doc_id"] = doc_id
-                st.session_state["open_doc_page"] = citation.get("page")
-                st.session_state[f"show_md_{doc_id}"] = True
-                st.rerun()
+            if doc_id:
+                # A link, not a button: st.link_button opens in a new tab,
+                # so the source can sit beside the conversation instead of
+                # replacing your place in it.
+                url = f"?doc={quote(doc_id)}"
+                if citation.get("page"):
+                    url += f"&page={quote(str(citation['page']))}"
+                st.link_button("Open this document ↗", url,
+                               help="Opens in a new tab")
 
 
 def render_trace(trace) -> None:
@@ -132,12 +175,12 @@ if "messages" not in st.session_state:
 # None until the current conversation has been saved for the first time.
 st.session_state.setdefault("current_chat_id", None)
 
-for turn, message in enumerate(st.session_state.messages):
+for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
         if message.get("citations"):
             st.caption("Sources")
-            render_sources(message["citations"], key_prefix=f"h{turn}")
+            render_sources(message["citations"])
         render_trace(message.get("trace"))
 
 if question := st.chat_input("Ask about your documents"):
@@ -190,7 +233,7 @@ if question := st.chat_input("Ask about your documents"):
                 model=query["model"], temperature=query["temperature"],
             ))
             st.caption("Sources")
-            render_sources(citations, key_prefix="live")
+            render_sources(citations)
 
         render_trace(trace)
 
