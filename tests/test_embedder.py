@@ -86,3 +86,12 @@ def test_embedder_against_real_ollama_returns_1024_dims():
 
     assert len(vectors) == 2
     assert len(vectors[0]) == 1024
+
+
+def test_embedder_sends_keep_alive():
+    client = StubClient({"embeddings": [[0.1, 0.2]]})
+    embedder = OllamaEmbedder("http://x", "bge-m3", client=client)
+
+    embedder.embed(["a"])
+
+    assert client.calls[0]["keep_alive"] == "10m"

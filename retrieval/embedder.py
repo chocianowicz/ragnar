@@ -8,7 +8,8 @@ class OllamaEmbedder:
     """
 
     def __init__(self, base_url: str, model: str, client=None,
-                 timeout: float = 120.0, batch_size: int = 64):
+                 timeout: float = 120.0, batch_size: int = 64,
+                 keep_alive: str = "10m"):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout = timeout
@@ -18,6 +19,9 @@ class OllamaEmbedder:
         # arrives or the whole parse is wasted. Batching bounds each
         # request instead, and a query (one text) still costs one call.
         self.batch_size = batch_size
+        # Same reason as OllamaLLM.keep_alive: the embedding model is
+        # needed for every question and must not be evicted between them.
+        self.keep_alive = keep_alive
         self._client = client or httpx.Client()
 
     def embed(self, texts: list[str]) -> list[list[float]]:
@@ -29,7 +33,8 @@ class OllamaEmbedder:
             batch = texts[start:start + self.batch_size]
             response = self._client.post(
                 f"{self.base_url}/api/embed",
-                json={"model": self.model, "input": batch},
+                json={"model": self.model, "input": batch,
+                      "keep_alive": self.keep_alive},
                 timeout=self.timeout,
             )
             response.raise_for_status()
