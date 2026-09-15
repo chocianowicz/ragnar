@@ -25,7 +25,7 @@ class FakeStore:
     def upsert(self, chunks, vectors):
         self.chunks.extend(chunks)
 
-    def search(self, vector, limit, doc_ids=None):
+    def search(self, vector, limit, doc_ids=None, text=None):
         pool = self.chunks
         if doc_ids is not None:
             pool = [c for c in pool if c.doc_id in doc_ids]

@@ -28,9 +28,15 @@ retrieval:
   # real calibration - see eval/README.md, which needs a much larger golden
   # set before this number should be trusted.
   score_floor: 0.55
+  # Pair the dense embedding with a lexical (sparse) one and fuse the two
+  # by reciprocal rank. Dense vectors are poor at exact identifiers - a
+  # CN code in a large reference table ranked 291st without this. Applies
+  # to collections created from now on; an older collection cannot have a
+  # sparse vector added in place, see `python -m retrieval.migrate`.
+  hybrid: true
 
 storage:
   data_dir: /app/data
-  collection: documents
+  collection: documents_hybrid
   # Points per Qdrant upsert request, for the same reason.
   upsert_batch: 128

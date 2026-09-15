@@ -33,7 +33,7 @@ def build_services():
     embedder = OllamaEmbedder(cfg.ollama_url, cfg.embedding_model,
                               batch_size=cfg.embedding_batch)
     store = QdrantStore(cfg.qdrant_url, cfg.collection, cfg.embedding_dim,
-                        upsert_batch=cfg.upsert_batch)
+                        upsert_batch=cfg.upsert_batch, hybrid=cfg.hybrid)
     store.ensure_collection()
     llm = OllamaLLM(cfg.ollama_url, cfg.llm_model)
 

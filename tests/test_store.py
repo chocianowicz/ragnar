@@ -123,3 +123,76 @@ def test_search_with_none_doc_ids_is_unfiltered(store):
     results = store.search([0.1] * 1024, limit=10, doc_ids=None)
 
     assert {r.chunk.doc_id for r in results} == {"d1", "d2"}
+
+
+@pytest.mark.integration
+def test_hybrid_finds_an_exact_code_that_dense_ranks_out_of_reach():
+    """The reason hybrid exists: on the real corpus a dense vector ranked
+    the chunk holding CN code 31022100 at 291, because an identifier
+    carries almost no signal a dense vector can use.
+
+    Modelled here by giving every decoy the query's own dense vector and
+    the target an orthogonal one, so the target is last by dense
+    similarity and can only be recovered lexically.
+    """
+    import uuid as _uuid
+
+    name = f"test_{_uuid.uuid4().hex[:8]}"
+    store = QdrantStore(os.environ["QDRANT_URL"], name, dim=8, hybrid=True)
+    store.ensure_collection()
+    try:
+        assert store.is_hybrid
+        query_vec = [1.0] + [0.0] * 7
+        orthogonal = [0.0, 1.0] + [0.0] * 6
+
+        chunks = [_chunk("d1", f"| 3102{i:04d} | some chemical compound |", i)
+                  for i in range(30)]
+        vectors = [query_vec] * 30
+        chunks.append(_chunk("d1", "| 31022100 | Ammonium sulphate |", 99))
+        vectors.append(orthogonal)
+        store.upsert(chunks, vectors)
+
+        dense_only = store.search(query_vec, limit=5)
+        hybrid = store.search(query_vec, limit=5,
+                              text="benchmark for CN code 31022100")
+
+        assert not any("31022100" in r.chunk.text for r in dense_only), \
+            "dense alone should not reach it"
+        assert any("31022100" in r.chunk.text for r in hybrid), \
+            "the lexical half should pull it into the candidate pool"
+    finally:
+        store.drop_collection()
+
+
+@pytest.mark.integration
+def test_hybrid_search_without_text_still_works():
+    import uuid as _uuid
+    name = f"test_{_uuid.uuid4().hex[:8]}"
+    store = QdrantStore(os.environ["QDRANT_URL"], name, dim=8, hybrid=True)
+    store.ensure_collection()
+    try:
+        store.upsert([_chunk("d1", "hello")], [[0.1] * 8])
+        assert len(store.search([0.1] * 8, limit=5)) == 1
+    finally:
+        store.drop_collection()
+
+
+@pytest.mark.integration
+def test_legacy_unnamed_collection_keeps_working():
+    """A collection built before hybrid cannot gain a sparse vector, so it
+    has to keep working untouched rather than fail on every upsert."""
+    import uuid as _uuid
+    name = f"test_{_uuid.uuid4().hex[:8]}"
+    legacy = QdrantStore(os.environ["QDRANT_URL"], name, dim=8, hybrid=False)
+    legacy.ensure_collection()
+    try:
+        # A hybrid-configured store pointed at the same legacy collection.
+        store = QdrantStore(os.environ["QDRANT_URL"], name, dim=8, hybrid=True)
+        store.ensure_collection()
+        assert store.is_hybrid is False
+
+        store.upsert([_chunk("d1", "hello")], [[0.1] * 8])
+        hits = store.search([0.1] * 8, limit=5, text="hello")
+        assert len(hits) == 1
+    finally:
+        legacy.drop_collection()

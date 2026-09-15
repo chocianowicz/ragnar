@@ -107,6 +107,11 @@ class Config:
         return self._raw["retrieval"]["score_floor"]
 
     @property
+    def hybrid(self) -> bool:
+        """Whether new collections pair the dense vector with a lexical one."""
+        return bool(self._raw["retrieval"].get("hybrid", True))
+
+    @property
     def reranker_max_length(self) -> int:
         """Token window per rerank pair. See retrieval/reranker.py."""
         return self._raw["models"].get("reranker_max_length", 512)

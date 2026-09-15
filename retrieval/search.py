@@ -61,7 +61,11 @@ class Search:
         floor = self.score_floor if score_floor is None else score_floor
         limit = self._candidates if candidates is None else candidates
         vector = self._embedder.embed([question])[0]
-        pool = self._store.search(vector, limit=limit, doc_ids=doc_ids)
+        # The question goes to the store as text as well as a vector: on a
+        # hybrid collection that adds the lexical half, which is what
+        # finds exact identifiers the embedder ranks nowhere near the top.
+        pool = self._store.search(vector, limit=limit, doc_ids=doc_ids,
+                                  text=question)
 
         if not pool:
             return SearchOutcome(refused=True)

@@ -8,7 +8,7 @@ class StubStore:
         self._results = results
         self.last_doc_ids = "not called"
 
-    def search(self, vector, limit, doc_ids=None):
+    def search(self, vector, limit, doc_ids=None, text=None):
         self.last_doc_ids = doc_ids
         if doc_ids is not None and not doc_ids:
             return []
@@ -170,9 +170,9 @@ class LimitRecordingStore(StubStore):
         super().__init__(results)
         self.last_limit = None
 
-    def search(self, vector, limit, doc_ids=None):
+    def search(self, vector, limit, doc_ids=None, text=None):
         self.last_limit = limit
-        return super().search(vector, limit, doc_ids)
+        return super().search(vector, limit, doc_ids, text)
 
 
 def test_candidate_count_defaults_to_the_configured_value():

@@ -36,9 +36,11 @@ You drag a PDF into the sidebar and ask a question. In between, RAGnar:
 2. **Chunks it structurally** — grouped by heading, never split across a page
    boundary. Tables are chunked by row group with the header row repeated in each
    one, so no chunk is a headerless fragment nobody can read.
-3. **Embeds and stores** — BGE-M3 vectors in Qdrant.
-4. **Retrieves and narrows** — 25 candidates, reranked by a cross-encoder down to 5,
-   then measured against a similarity floor.
+3. **Embeds and stores** — BGE-M3 vectors in Qdrant, each paired with a lexical
+   (sparse) vector of the same chunk.
+4. **Retrieves and narrows** — dense and lexical search run together and are fused by
+   reciprocal rank; 25 candidates, reranked by a cross-encoder down to 5, then
+   measured against a similarity floor.
 5. **Answers, or refuses** — the model sees only the retrieved excerpts, and the
    citations are assembled from those chunks rather than from anything the model wrote.
 
@@ -228,6 +230,7 @@ points, not a golden set. Lower it and refusals turn into confident guesses.
 | `models.reranker` | `BAAI/bge-reranker-v2-m3` | Cross-encoder, downloaded once |
 | `chunking.target_tokens` | `500` | 50-token overlap |
 | `chunking.table_rows_per_group` | `20` | Header repeated per group |
+| `retrieval.hybrid` | `true` | Pair the dense vector with a lexical one |
 | `retrieval.candidates` | `25` | Fetched before reranking |
 | `retrieval.top_k` | `5` | Kept after reranking |
 | `retrieval.score_floor` | `0.55` | Below this, refuse |
