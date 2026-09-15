@@ -137,10 +137,16 @@ def test_classify_refuses_aggregation_over_table_heavy_results():
         is AnswerMode.AGGREGATION_REFUSED
 
 
-def test_classify_defers_aggregation_when_a_summary_was_retrieved():
-    # A precomputed aggregate summary means the total is already a ready fact.
+def test_classify_defers_aggregation_when_a_summary_of_that_column_was_retrieved():
+    # A precomputed aggregate of the column asked about means the total is
+    # already a ready fact. The summary text must be in the real format, or
+    # the guard cannot recover which column it covers.
     results = [_result("a.pdf", 1, "| x | y |", is_table=True),
-               _result("a.pdf", 1, "Aggregate: total 600", is_summary=True)]
+               _result("a.pdf", 1, "| p | q |", is_table=True),
+               _result("a.pdf", 1,
+                       "Aggregate column summary: 3 rows total. Total — "
+                       "total (sum): 600; average (mean): 200; minimum: 100; "
+                       "maximum: 300; count: 3", is_summary=True)]
     assert classify("what is the total?", False, results) is AnswerMode.ANSWER
 
 

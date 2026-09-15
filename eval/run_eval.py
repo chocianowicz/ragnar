@@ -29,7 +29,7 @@ from retrieval.store import QdrantStore
 from retrieval.reranker import BGEReranker
 from retrieval.search import Search
 from generation.llm import OllamaLLM
-from generation import followup
+from generation import followup, injection
 from generation.answerer import Answerer, AnswerMode, classify
 from eval.metrics import refusal_accuracy, citation_accuracy
 
@@ -41,6 +41,16 @@ def load_golden(path: Path) -> list[dict]:
     if not entries:
         raise SystemExit(f"{path} is empty — nothing to evaluate.")
     return entries
+
+
+def case_flagged(results) -> bool:
+    """Whether any retrieved passage carries instruction-shaped text.
+
+    Recorded per case because an adversarial golden entry asserts two
+    things — the visible fact was answered, and the planted instruction
+    was flagged — and `citations` holds label strings, which cannot say.
+    """
+    return any(injection.flag(r.chunk.text) for r in results)
 
 
 def turns_of(entry: dict) -> list[str]:
@@ -144,6 +154,7 @@ def run_cases(score_floor: float | None = None,
             "citations": citations,
             "refused": refused,
             "contexts": [r.chunk.text for r in outcome.results],
+            "flagged": case_flagged(outcome.results),
         })
 
     return cases

@@ -71,11 +71,11 @@ def test_identifier_named_column_is_not_summarised():
 def test_high_cardinality_integer_column_is_not_summarised():
     """No header hint, but every value distinct and integral across
     enough rows to be sure: an id, not a measurement."""
-    df = pd.DataFrame({"Ref": list(range(100001, 100011)),
+    df = pd.DataFrame({"Ticket": list(range(100001, 100011)),
                        "Amount": [10.5] * 10})
     s = summarize_table(df)
 
-    assert "Ref" not in s
+    assert "Ticket" not in s
     assert "Amount" in s
 
 
