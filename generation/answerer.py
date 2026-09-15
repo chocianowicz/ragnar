@@ -65,13 +65,18 @@ def citation_labels(results: list[SearchResult]) -> list[str]:
     return seen
 
 
-def build_citations(results: list[SearchResult]) -> list[dict]:
+def build_citations(results: list[SearchResult], publish=None) -> list[dict]:
     """Citations with enough metadata for the UI to show and open a source.
 
     Deduplicated by label, first-seen order, same as citation_labels — but
     carrying the passage that was actually used, so "show me where this
     came from" is answered from what the model was given rather than from a
     fresh lookup that might return something else.
+
+    `publish(doc_id, filename) -> str | None` makes the original file
+    reachable and returns its URL. Injected rather than imported so this
+    module stays free of UI concerns, and called once here rather than on
+    every redraw.
 
     Plain dicts, deliberately: these are written straight into the chat
     history, which is persisted as JSON. A dataclass here would serialize
@@ -98,6 +103,7 @@ def build_citations(results: list[SearchResult]) -> list[dict]:
             # Instruction-shaped text in the passage, if any. Empty for
             # almost every citation; when it is not, the UI says so.
             "flags": injection.flag(chunk.text),
+            "url": publish(chunk.doc_id, chunk.filename) if publish else None,
         })
     return citations
 

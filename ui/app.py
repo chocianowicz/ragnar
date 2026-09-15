@@ -251,10 +251,7 @@ def render_sources(citations: list) -> None:
                 if page:
                     url += f"&page={quote(str(page))}"
 
-                published = sources.publish(
-                    svc["storage"].archived_path(filename, doc_id),
-                    doc_id, filename,
-                ) if filename else None
+                published = citation.get("url")
 
                 cols = st.columns(2)
                 with cols[0]:
@@ -400,7 +397,11 @@ def answer_job(job, question, history, doc_ids_filter, query):
         job.append(aggregation_refusal(outcome.results))
         return
 
-    job.citations = build_citations(outcome.results)
+    job.citations = build_citations(
+        outcome.results,
+        publish=lambda doc_id, filename: sources.publish(
+            svc["storage"].archived_path(filename, doc_id), doc_id, filename),
+    )
     job.status = "Writing the answer"
 
     # Hold the opening back until it is clear whether this is an answer or

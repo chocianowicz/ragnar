@@ -302,3 +302,35 @@ def test_citations_carry_injection_flags():
     assert c_clean["flags"] == []
     assert c_planted["flags"]
     assert "ignore" in c_planted["flags"][0].lower()
+
+
+def test_citations_carry_a_url_when_a_publisher_is_given():
+    """Publishing during rendering meant filesystem I/O per citation per
+    rerun — once a second while an answer streams."""
+    from generation.answerer import build_citations
+    from core.models import Chunk, SearchResult
+
+    result = SearchResult(chunk=Chunk(doc_id="abc", filename="a.pdf",
+                                      text="t", chunk_index=0, page=2),
+                          score=0.9)
+    calls = []
+
+    def publish(doc_id, filename):
+        calls.append((doc_id, filename))
+        return "/app/static/abc.pdf"
+
+    [citation] = build_citations([result], publish=publish)
+
+    assert citation["url"] == "/app/static/abc.pdf"
+    assert calls == [("abc", "a.pdf")]
+
+
+def test_citations_have_no_url_without_a_publisher():
+    from generation.answerer import build_citations
+    from core.models import Chunk, SearchResult
+
+    [citation] = build_citations([SearchResult(
+        chunk=Chunk(doc_id="a", filename="a.pdf", text="t", chunk_index=0),
+        score=0.5)])
+
+    assert citation["url"] is None
