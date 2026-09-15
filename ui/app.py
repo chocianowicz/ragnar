@@ -1,5 +1,4 @@
 import time
-from urllib.parse import quote
 
 import httpx
 import streamlit as st
@@ -8,6 +7,8 @@ from generation.answering import Settings, answer as run_answer
 from history.chat_store import chat_title
 from ui.services import build_services
 from ui.jobs import JobRegistry, new_chat_id
+from ui.chat import render_transcript
+from ui.reader import render_document_page
 from ui import sources
 from ui.panels import settings, documents, chats
 
@@ -73,48 +74,8 @@ except Exception:
     st.stop()
 
 
-def render_document_page(doc_id: str, page: str | None) -> None:
-    """A standalone reader for one document, opened from a citation.
-
-    This is its own page rather than an expanding panel so a citation can
-    be opened in a new tab and kept beside the conversation — checking a
-    source should not cost you your place in the chat.
-
-    The converted text is shown rather than the original file because that
-    is what the citation refers to: page and sheet provenance is recorded
-    during conversion. The original is offered as a download, since the
-    app runs in a container with no access to the browser's file handlers
-    and cannot serve the raw bytes as a URL without static file serving
-    turned on.
-    """
-    doc = svc["registry"].get(doc_id)
-    if doc is None:
-        st.error("That document is no longer indexed.")
-        return
-
-    st.title(doc.filename)
-    if page:
-        st.caption(f"Cited from page {page} — use your browser's find "
-                   f"(⌘F / Ctrl-F) to jump to the passage.")
-
-    original = svc["storage"].archived_path(doc.filename, doc.doc_id)
-    published = sources.publish(original, doc.doc_id, doc.filename)
-    if published and sources.viewable(doc.filename):
-        anchor = f"{published}#page={page}" if page else published
-        st.link_button("Open the original file ↗", anchor)
-    elif original.exists():
-        st.download_button("⬇ Download the original file",
-                           data=original.read_bytes(),
-                           file_name=doc.filename, key="reader_download")
-    else:
-        st.caption("Original file not found — showing the converted text only.")
-
-    st.divider()
-    st.markdown(svc["storage"].read_markdown(doc_id) or "_Not yet converted_")
-
-
 if "doc" in st.query_params:
-    render_document_page(st.query_params["doc"],
+    render_document_page(svc, st.query_params["doc"],
                          st.query_params.get("page"))
     st.stop()
 
@@ -198,151 +159,7 @@ doc_ids_filter = (
 )
 
 
-def render_sources(citations: list) -> None:
-    """Show each cited passage, with a way into the document it came from.
-
-    Citations saved before this existed are plain strings; render those as
-    the captions they used to be rather than dropping older conversations.
-    """
-    flagged = [c for c in citations
-               if isinstance(c, dict) and c.get("flags")]
-    if flagged:
-        st.warning(
-            f"{len(flagged)} of the sources below contain text that reads "
-            "as instructions to an AI rather than to a reader. The model "
-            "may have followed it. Check the flagged passage before "
-            "relying on this answer."
-        )
-
-    for citation in citations:
-        if not isinstance(citation, dict):
-            st.caption(str(citation))
-            continue
-
-        label = citation.get("label", "source")
-        score = citation.get("score")
-        heading = f"{label}" + (f"  ·  {score:.2f}" if score is not None else "")
-        with st.expander(heading):
-            # The passage the model was actually given, not a fresh lookup:
-            # this is what the answer was built from.
-            st.markdown(
-                f"> {citation.get('text', '').strip()[:1500]}"
-                .replace("\n", "\n> ")
-            )
-            for snippet in citation.get("flags") or []:
-                # st.text, never markdown: this is document text and must
-                # not be able to render markup.
-                st.error("Instruction-like text in this passage:", icon="⚠️")
-                st.text(snippet)
-            doc_id = citation.get("doc_id")
-            if doc_id:
-                # Links, not buttons: st.link_button opens a new tab, so
-                # checking a source does not cost you your place in the
-                # chat.
-                filename = citation.get("filename", "")
-                page = citation.get("page")
-                url = f"?doc={quote(doc_id)}"
-                if page:
-                    url += f"&page={quote(str(page))}"
-
-                published = citation.get("url")
-
-                cols = st.columns(2)
-                with cols[0]:
-                    if published and sources.viewable(filename):
-                        # #page= is understood by the PDF viewers built into
-                        # every current browser, so this lands on the cited
-                        # page of the real document rather than near it.
-                        anchor = f"{published}#page={page}" if page else published
-                        st.link_button("Open the original ↗", anchor,
-                                       help="The real file, at the cited page")
-                    elif published:
-                        st.link_button("Open the original ↗", published,
-                                       help="Downloads in a new tab")
-                with cols[1]:
-                    st.link_button("Converted text ↗", url,
-                                   help="What the page number indexes")
-
-
-def render_trace(trace, key: str) -> None:
-    """How the answer was found — shown because a local question takes tens
-    of seconds, and because a refusal is only actionable if you can see
-    whether nothing matched or everything scored just under the floor.
-
-    Wrapped in keyed containers so CSS can render the whole thing smaller
-    and dimmed: it is supporting detail, and should not compete with the
-    answer for attention.
-    """
-    if trace is None:
-        return
-    with st.container(key=f"tracewrap_{key}"), \
-            st.expander("How this answer was found"), \
-            st.container(key=f"trace_{key}"):
-        bits = [
-            f"**{trace.get('candidates', 0)}** passages retrieved"
-            + (" by meaning and wording" if trace.get("hybrid") else ""),
-        ]
-        if trace.get("reranked"):
-            bits.append(f"**{trace['reranked']}** re-checked by the ranker")
-        bits.append(
-            f"**{trace.get('kept', 0)}** cleared the relevance floor "
-            f"({trace.get('floor', 0):.2f})"
-        )
-        if trace.get("best_score") is not None:
-            bits.append(f"best score **{trace['best_score']:.3f}**")
-        st.markdown(" · ".join(bits))
-        seconds = trace.get("seconds") or {}
-        if seconds:
-            st.caption("  ".join(f"{k} {v:.1f}s" for k, v in seconds.items()))
-
-        if trace.get("resolved_question"):
-            st.caption("Searched for the follow-up as:")
-            # st.text: this is model output and must not be able to inject
-            # markup into the page.
-            st.text(trace["resolved_question"])
-
-        agentic = trace.get("agentic")
-        if agentic:
-            st.divider()
-            st.markdown(
-                f"**{agentic.get('llm_calls', 0)}** extra model call(s) "
-                f"before the answer · pool widened to "
-                f"**{agentic.get('pool_size', 0)}** passages"
-            )
-            if agentic.get("rewritten_query"):
-                # st.text, not markdown: this is model output and must not
-                # be able to inject formatting or markup into the page.
-                st.caption("Searched instead for:")
-                st.text(agentic["rewritten_query"])
-            queries = agentic.get("queries") or []
-            if len(queries) > 1:
-                st.caption(f"{len(queries)} phrasings searched:")
-                for q in queries:
-                    st.text(f"• {q}")
-            if agentic.get("hops"):
-                st.caption(f"Followed up {agentic['hops']} time(s) "
-                           f"after finding gaps.")
-            if agentic.get("self_corrected"):
-                st.caption("Draft answer judged incomplete; searched again.")
-            for note in agentic.get("notes") or []:
-                st.caption(f"⚠ {note}")
-
-
-for turn, message in enumerate(st.session_state.messages):
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-        if message.get("citations"):
-            st.caption("Sources")
-            render_sources(message["citations"])
-        else:
-            # No answer came out of the passages, so no sources — but the
-            # near misses are still worth offering as somewhere to look.
-            related = (message.get("trace") or {}).get("related") or []
-            if related:
-                with st.expander("Related documents you might check"):
-                    for label in related:
-                        st.caption(label)
-        render_trace(message.get("trace"), key=f"h{turn}")
+render_transcript(st.session_state.messages)
 
 if question := st.chat_input("Ask about your documents",
                              disabled=jobs.running(
