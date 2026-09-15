@@ -4,13 +4,7 @@ from urllib.parse import quote
 import httpx
 import streamlit as st
 
-from generation.guards import aggregation_refusal
-from generation.answerer import (
-    AnswerMode, classify, NO_RESULTS_MESSAGE, citation_labels,
-    build_citations, declined,
-)
-from generation import followup
-from generation.prompts import NO_ANSWER
+from generation.answering import Settings, answer as run_answer
 from history.chat_store import chat_title
 from ui.services import build_services
 from ui.jobs import JobRegistry, new_chat_id
@@ -350,91 +344,6 @@ for turn, message in enumerate(st.session_state.messages):
                         st.caption(label)
         render_trace(message.get("trace"), key=f"h{turn}")
 
-def answer_job(job, question, history, doc_ids_filter, query):
-    """The whole answer, start to finish, on a background thread.
-
-    Reports progress into the job and appends generated text as it
-    arrives. Touches no Streamlit API: everything here can outlive the
-    script run that started it, and st.* is only safe on the script's own
-    thread.
-    """
-    search_question, resolved = question, False
-    if history and query["follow_up"]:
-        job.status = "Working out what the question refers to"
-        search_question, resolved = followup.resolve(
-            svc["llm"], question, history, model=query["model"])
-
-    step = lambda label: setattr(job, "status", label)
-    extras = any((query["rewrite"], query["multi_query"],
-                  query["multi_hop"], query["self_correct"]))
-    if extras:
-        outcome, agentic = svc["agentic"].find(
-            search_question, doc_ids=doc_ids_filter,
-            score_floor=query["floor"], candidates=query["candidates"],
-            use_reranker=query["use_reranker"],
-            rewrite=query["rewrite"], multi_query=query["multi_query"],
-            multi_hop=query["multi_hop"], self_correct=query["self_correct"],
-            on_step=step,
-        )
-    else:
-        outcome = svc["search"].find(
-            search_question, doc_ids=doc_ids_filter,
-            score_floor=query["floor"], candidates=query["candidates"],
-            use_reranker=query["use_reranker"], on_step=step)
-        agentic = None
-
-    mode = classify(question, outcome.refused, outcome.results)
-    job.trace = outcome.trace.as_dict()
-    job.trace["resolved_question"] = search_question if resolved else None
-    if agentic is not None:
-        job.trace["agentic"] = agentic.as_dict()
-
-    if mode is AnswerMode.NO_RESULTS:
-        job.append(NO_RESULTS_MESSAGE)
-        job.trace["related"] = citation_labels(outcome.related)
-        return
-    if mode is AnswerMode.AGGREGATION_REFUSED:
-        job.append(aggregation_refusal(outcome.results))
-        return
-
-    job.citations = build_citations(
-        outcome.results,
-        publish=lambda doc_id, filename: sources.publish(
-            svc["storage"].archived_path(filename, doc_id), doc_id, filename),
-    )
-    job.status = "Writing the answer"
-
-    # Hold the opening back until it is clear whether this is an answer or
-    # the model declining, so the sentinel never appears on screen. It is
-    # the first thing emitted when it is emitted at all, so a short buffer
-    # settles it.
-    buffer, deciding = "", True
-    for piece in svc["answerer"].stream(
-            question, outcome.results, model=query["model"],
-            temperature=query["temperature"], history=history):
-        if deciding:
-            buffer += piece
-            if declined(buffer):
-                break
-            if len(buffer.strip()) < len(NO_ANSWER):
-                continue          # still could go either way
-            deciding = False
-            job.append(buffer)
-            continue
-        job.append(piece)
-
-    if declined(buffer):
-        # The passages looked relevant but did not answer. Not an answer,
-        # so no sources: they did not produce this.
-        job.chunks.clear()
-        job.citations = []
-        job.append(NO_RESULTS_MESSAGE)
-        job.trace["model_declined"] = True
-        job.trace["related"] = citation_labels(outcome.results)
-    elif deciding:
-        job.append(buffer)        # stream ended inside the buffer
-
-
 if question := st.chat_input("Ask about your documents",
                              disabled=jobs.running(
                                  st.session_state.current_chat_id or "")):
@@ -451,9 +360,23 @@ if question := st.chat_input("Ask about your documents",
     svc["chats"].save(st.session_state.current_chat_id,
                       chat_title(st.session_state.messages),
                       st.session_state.messages)
+    settings = Settings(
+        model=query["model"], temperature=query["temperature"],
+        floor=query["floor"], candidates=query["candidates"],
+        use_reranker=query["use_reranker"], follow_up=query["follow_up"],
+        rewrite=query["rewrite"], multi_query=query["multi_query"],
+        multi_hop=query["multi_hop"], self_correct=query["self_correct"])
+
     jobs.start(
         st.session_state.current_chat_id,
-        lambda job: answer_job(job, question, history, doc_ids_filter, query),
+        lambda job: run_answer(
+            job, question, history=history, doc_ids=doc_ids_filter,
+            settings=settings, search=svc["search"],
+            answerer=svc["answerer"], agentic=svc["agentic"], llm=svc["llm"],
+            publish=lambda doc_id, filename: sources.publish(
+                svc["storage"].archived_path(filename, doc_id),
+                doc_id, filename),
+        ),
     )
     st.rerun()
 
