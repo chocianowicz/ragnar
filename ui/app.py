@@ -11,6 +11,7 @@ from generation.answerer import (
 )
 from history.chat_store import chat_title
 from ui.services import build_services
+from ui import sources
 from ui.panels import settings, documents, chats
 
 st.set_page_config(page_title="RAGnar", page_icon="📚")
@@ -55,7 +56,11 @@ def render_document_page(doc_id: str, page: str | None) -> None:
                    f"(⌘F / Ctrl-F) to jump to the passage.")
 
     original = svc["storage"].archived_path(doc.filename, doc.doc_id)
-    if original.exists():
+    published = sources.publish(original, doc.doc_id, doc.filename)
+    if published and sources.viewable(doc.filename):
+        anchor = f"{published}#page={page}" if page else published
+        st.link_button("Open the original file ↗", anchor)
+    elif original.exists():
         st.download_button("⬇ Download the original file",
                            data=original.read_bytes(),
                            file_name=doc.filename, key="reader_download")
@@ -135,14 +140,35 @@ def render_sources(citations: list) -> None:
             )
             doc_id = citation.get("doc_id")
             if doc_id:
-                # A link, not a button: st.link_button opens in a new tab,
-                # so the source can sit beside the conversation instead of
-                # replacing your place in it.
+                # Links, not buttons: st.link_button opens a new tab, so
+                # checking a source does not cost you your place in the
+                # chat.
+                filename = citation.get("filename", "")
+                page = citation.get("page")
                 url = f"?doc={quote(doc_id)}"
-                if citation.get("page"):
-                    url += f"&page={quote(str(citation['page']))}"
-                st.link_button("Open this document ↗", url,
-                               help="Opens in a new tab")
+                if page:
+                    url += f"&page={quote(str(page))}"
+
+                published = sources.publish(
+                    svc["storage"].archived_path(filename, doc_id),
+                    doc_id, filename,
+                ) if filename else None
+
+                cols = st.columns(2)
+                with cols[0]:
+                    if published and sources.viewable(filename):
+                        # #page= is understood by the PDF viewers built into
+                        # every current browser, so this lands on the cited
+                        # page of the real document rather than near it.
+                        anchor = f"{published}#page={page}" if page else published
+                        st.link_button("Open the original ↗", anchor,
+                                       help="The real file, at the cited page")
+                    elif published:
+                        st.link_button("Open the original ↗", published,
+                                       help="Downloads in a new tab")
+                with cols[1]:
+                    st.link_button("Converted text ↗", url,
+                                   help="What the page number indexes")
 
 
 def render_trace(trace) -> None:

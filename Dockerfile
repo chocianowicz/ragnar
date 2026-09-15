@@ -32,5 +32,10 @@ RUN pip install --no-cache-dir -e ".[dev]"
 
 COPY . .
 
+# enableStaticServing lets the app hand the browser the actual uploaded
+# file, so a citation can open the real PDF in the browser's own viewer —
+# at the cited page, via the #page= fragment. Files are served from
+# ui/static, which holds hard links to data/originals (see ui/sources.py).
 CMD ["streamlit", "run", "ui/app.py", \
-     "--server.address=0.0.0.0", "--server.port=8501"]
+     "--server.address=0.0.0.0", "--server.port=8501", \
+     "--server.enableStaticServing=true"]

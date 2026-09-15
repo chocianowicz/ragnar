@@ -1,6 +1,7 @@
 import streamlit as st
 
 from ui.services import format_eta
+from ui import sources
 
 STATUS_ICONS = {"queued": "⏳", "processing": "⚙️", "done": "✅", "failed": "❌"}
 
@@ -128,6 +129,10 @@ def _status_strip_body(svc) -> None:
                              help=f"Remove {doc.filename}"):
                     svc["store"].delete_by_doc(doc.doc_id)
                     svc["storage"].remove_converted(doc.doc_id)
+                    # Also drop the served copy, or the file stays
+                    # downloadable by URL after the delete button says it
+                    # is gone.
+                    sources.unpublish(doc.doc_id, doc.filename)
                     svc["registry"].remove(doc.doc_id)
                     st.rerun()
 

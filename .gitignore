@@ -19,3 +19,7 @@ data/
 # eval reports can contain full chunk text from whatever corpus was
 # evaluated - never commit real document content
 eval/reports/
+
+# Hard links to data/originals, published so citations can open the real
+# file in the browser. Rebuilt on demand; never source.
+ui/static/
