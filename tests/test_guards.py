@@ -101,7 +101,9 @@ def test_ordinary_polish_questions_over_tables_are_NOT_refused(question):
     assert not should_refuse_aggregation(question, results)
 
 
-def _summary(text="Aggregate column summary: total (sum): 6000"):
+def _summary(text=("Aggregate column summary (Q1 sheet): 2 rows total. "
+                   "Revenue — total (sum): 6000; average (mean): 3000; "
+                   "minimum: 1000; maximum: 5000; count: 2")):
     return SearchResult(
         chunk=Chunk(doc_id="d", filename="f.xlsx", text=text, chunk_index=0,
                     is_summary=True, sheet="Q1"),
@@ -109,7 +111,18 @@ def _summary(text="Aggregate column summary: total (sum): 6000"):
     )
 
 
-def test_aggregation_defers_to_precomputed_summary():
-    # aggregation intent + table results, but a summary is present -> do NOT refuse
+def test_aggregation_defers_to_a_summary_of_the_column_asked_about():
+    # aggregation intent + table results, and a summary of exactly the
+    # column in the question -> the model can read the total; do NOT refuse
     results = [_summary(), _result("| a | 1 |", True)]
     assert not should_refuse_aggregation("What is the total revenue?", results)
+
+
+def test_aggregation_still_refuses_when_the_summary_is_about_something_else():
+    """The failure this fixes: any retrieved summary used to switch the
+    guard off, including one summarising an unrelated column."""
+    results = [_summary("Aggregate column summary: 1809 rows total. "
+                        "Column A BMg — total (sum): 12.3; average (mean): "
+                        "0.01; minimum: 0; maximum: 1.5; count: 1804"),
+               _result("| a | 1 |", True), _result("| b | 2 |", True)]
+    assert should_refuse_aggregation("What is the total revenue?", results)

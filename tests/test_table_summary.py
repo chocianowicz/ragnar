@@ -85,3 +85,23 @@ def test_small_table_of_distinct_integers_is_still_summarised():
     df = pd.DataFrame({"Amount": [100, 200, 300]})
 
     assert "Amount" in summarize_table(df)
+
+
+def test_columns_of_parses_the_summary_it_writes():
+    from ingestion.table_summary import columns_of
+    df = pd.DataFrame({"Salary": [1, 2, 3], "Bonus": [4, 5, 6],
+                       "Name": ["a", "b", "c"]})
+
+    assert columns_of(summarize_table(df, sheet="Pay")) == ["Salary", "Bonus"]
+
+
+def test_columns_of_keeps_multi_word_names():
+    from ingestion.table_summary import columns_of
+    df = pd.DataFrame({"Net revenue": [1.5, 2.5, 3.5]})
+
+    assert columns_of(summarize_table(df)) == ["Net revenue"]
+
+
+def test_columns_of_handles_non_summary_text():
+    from ingestion.table_summary import columns_of
+    assert columns_of("The notice period is three months.") == []

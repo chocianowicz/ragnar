@@ -78,3 +78,25 @@ def summarize_table(df: pd.DataFrame, sheet: str | None = None) -> str | None:
     where = f" ({sheet} sheet)" if sheet else ""
     head = f"Aggregate column summary{where}: {len(df)} rows total."
     return head + " " + " ".join(parts)
+
+
+# Column names as they appear in a summary this module wrote. Kept here,
+# next to the format it parses, so the two cannot drift apart unnoticed.
+_COLUMN_IN_SUMMARY = re.compile(r"([^;:.]+?) — total \(sum\)")
+
+
+def columns_of(summary_text: str) -> list[str]:
+    """The columns a summary covers, parsed back out of its text.
+
+    A summary is stored as a chunk with no structured metadata, so the
+    aggregation guard has to recover the column names from the prose to
+    decide whether the summary answers the question being asked.
+    """
+    names = []
+    for raw in _COLUMN_IN_SUMMARY.findall(summary_text):
+        # The match runs back to the previous separator, which may leave
+        # a trailing count ("count: 3 Revenue") in front of the name.
+        name = re.sub(r"^\s*\d+\s*", "", raw).strip()
+        if name:
+            names.append(name)
+    return names

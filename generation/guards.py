@@ -1,6 +1,7 @@
 import re
 
 from core.models import SearchResult
+from ingestion.table_summary import columns_of
 
 # Aggregation intent markers that are whole words in their own right, so
 # both edges can be anchored without discarding real matches.
@@ -62,6 +63,24 @@ def _is_table_heavy(results: list[SearchResult]) -> bool:
     return tables / len(results) > TABLE_MAJORITY
 
 
+def _summary_answers(question: str, results: list[SearchResult]) -> bool:
+    """Whether a retrieved summary covers a column the question names.
+
+    A precomputed total is only a reason not to refuse when it is a total
+    of the thing being asked about. Any summary at all used to lift the
+    guard — including one for an unrelated column that happened to embed
+    near the question.
+    """
+    words = {w for w in re.findall(r"\w+", question.lower()) if len(w) >= 3}
+    for result in results:
+        if not result.chunk.is_summary:
+            continue
+        for column in columns_of(result.chunk.text):
+            if any(w in words for w in re.findall(r"\w+", column.lower())):
+                return True
+    return False
+
+
 def should_refuse_aggregation(question: str,
                                results: list[SearchResult]) -> bool:
     """Fires only when BOTH signals are present.
@@ -70,11 +89,12 @@ def should_refuse_aggregation(question: str,
     "total" about a prose contract must not be blocked, and a lookup
     question over a table must not be blocked either.
 
-    Defers entirely when a precomputed aggregate summary was retrieved —
-    the LLM can read a ready, deterministically-correct total from it, so
-    there is nothing to refuse.
+    Defers when a precomputed aggregate summary of the column the question
+    asks about was retrieved — the LLM can read a ready,
+    deterministically-correct total from it, so there is nothing to refuse.
+    A summary of some other column is not a reason to answer.
     """
-    if any(r.chunk.is_summary for r in results):
+    if _summary_answers(question, results):
         return False
     return _has_aggregation_intent(question) and _is_table_heavy(results)
 
