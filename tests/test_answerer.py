@@ -2,6 +2,7 @@ import pytest
 from core.models import Chunk, SearchResult
 from generation.answerer import (
     Answerer, AnswerMode, build_excerpts, citation_labels, classify,
+    NO_RESULTS_MESSAGE,
 )
 
 
@@ -237,3 +238,41 @@ def test_a_refusal_still_never_calls_the_model():
 
     assert answer.refused
     assert llm.prompts == []
+
+
+def test_a_declined_answer_carries_no_citations():
+    """Retrieval clearing the floor only means the passages looked
+    relevant. If the model finds no answer in them, showing five sources
+    under it claims they produced something they did not."""
+    from generation.prompts import NO_ANSWER
+    llm = StubLLM(reply=NO_ANSWER)
+
+    answer = Answerer(llm).answer("q", [_result("f.pdf", 1, "text")])
+
+    assert answer.refused
+    assert answer.citations == []
+    assert answer.text == NO_RESULTS_MESSAGE
+
+
+def test_a_declined_answer_does_not_leak_the_sentinel():
+    from generation.prompts import NO_ANSWER
+    answer = Answerer(StubLLM(reply=NO_ANSWER)).answer(
+        "q", [_result("f.pdf", 1, "text")])
+
+    assert NO_ANSWER not in answer.text
+
+
+def test_a_real_answer_still_carries_its_citations():
+    answer = Answerer(StubLLM(reply="Three months.")).answer(
+        "q", [_result("f.pdf", 4, "text")])
+
+    assert not answer.refused
+    assert answer.citations == ["f.pdf, p. 4"]
+
+
+def test_declined_detection_ignores_surrounding_whitespace():
+    from generation.answerer import declined
+    from generation.prompts import NO_ANSWER
+
+    assert declined(f"  \n{NO_ANSWER}\n")
+    assert not declined("The notice period is three months.")

@@ -7,9 +7,10 @@ import streamlit as st
 from generation.guards import aggregation_refusal
 from generation.answerer import (
     AnswerMode, classify, NO_RESULTS_MESSAGE, citation_labels,
-    build_citations,
+    build_citations, declined,
 )
 from generation import followup
+from generation.prompts import NO_ANSWER
 from history.chat_store import chat_title
 from ui.services import build_services
 from ui.jobs import JobRegistry, new_chat_id
@@ -327,6 +328,14 @@ for turn, message in enumerate(st.session_state.messages):
         if message.get("citations"):
             st.caption("Sources")
             render_sources(message["citations"])
+        else:
+            # No answer came out of the passages, so no sources — but the
+            # near misses are still worth offering as somewhere to look.
+            related = (message.get("trace") or {}).get("related") or []
+            if related:
+                with st.expander("Related documents you might check"):
+                    for label in related:
+                        st.caption(label)
         render_trace(message.get("trace"), key=f"h{turn}")
 
 def answer_job(job, question, history, doc_ids_filter, query):
@@ -395,10 +404,37 @@ def answer_job(job, question, history, doc_ids_filter, query):
 
     job.citations = build_citations(outcome.results)
     job.status = "Writing the answer"
+
+    # Hold the opening back until it is clear whether this is an answer or
+    # the model declining, so the sentinel never appears on screen. It is
+    # the first thing emitted when it is emitted at all, so a short buffer
+    # settles it.
+    buffer, deciding = "", True
     for piece in svc["answerer"].stream(
             question, outcome.results, model=query["model"],
             temperature=query["temperature"], history=history):
+        if deciding:
+            buffer += piece
+            if declined(buffer):
+                break
+            if len(buffer.strip()) < len(NO_ANSWER):
+                continue          # still could go either way
+            deciding = False
+            job.append(buffer)
+            continue
         job.append(piece)
+
+    if declined(buffer):
+        # The passages looked relevant but did not answer. Not an answer,
+        # so no sources: they did not produce this.
+        job.chunks.clear()
+        job.citations = []
+        job.mode = AnswerMode.NO_RESULTS.name
+        job.append(NO_RESULTS_MESSAGE)
+        job.trace["model_declined"] = True
+        job.trace["related"] = citation_labels(outcome.results)
+    elif deciding:
+        job.append(buffer)        # stream ended inside the buffer
 
 
 if question := st.chat_input("Ask about your documents",
@@ -430,6 +466,11 @@ if active is not None:
         partial = active.text
         if partial:
             st.markdown(partial)
+        related = active.trace.get("related") or []
+        if related and not active.citations:
+            with st.expander("Related documents you might check"):
+                for label in related:
+                    st.caption(label)
         if active.done:
             commit(active)
             jobs.pop(active.chat_id)

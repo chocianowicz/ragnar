@@ -3,7 +3,7 @@ from enum import Enum
 
 from core.models import SearchResult
 from generation.guards import should_refuse_aggregation
-from generation.prompts import SYSTEM_PROMPT, build_user_prompt
+from generation.prompts import SYSTEM_PROMPT, build_user_prompt, NO_ANSWER
 
 NO_RESULTS_MESSAGE = (
     "I could not find anything relevant in the indexed documents."
@@ -32,6 +32,22 @@ def recent_history(history: list[dict] | None) -> list[dict]:
         for m in history[-HISTORY_TURNS:]
         if m.get("role") in ("user", "assistant") and m.get("content")
     ]
+
+
+def declined(text: str) -> bool:
+    """Whether the model reported that the excerpts do not answer.
+
+    Retrieval clearing the floor only means the passages looked relevant;
+    the model reading them can still find no answer in them. That is a
+    refusal too, and it must not be dressed up as an answer with five
+    sources under it — the sources did not produce it.
+    """
+    return text.strip().startswith(NO_ANSWER)
+
+
+def strip_sentinel(text: str) -> str:
+    """The user-facing form of a declined answer."""
+    return NO_RESULTS_MESSAGE if declined(text) else text
 
 
 def citation_labels(results: list[SearchResult]) -> list[str]:
@@ -132,6 +148,12 @@ class Answerer:
             model=model, temperature=temperature,
             history=recent_history(history),
         )
+
+        if declined(text):
+            # No citations: nothing here was answered from them. This also
+            # keeps the eval harness honest, which would otherwise score a
+            # declined answer as a successful one.
+            return Answer(text=NO_RESULTS_MESSAGE, refused=True)
 
         return Answer(text=text, citations=citation_labels(results))
 

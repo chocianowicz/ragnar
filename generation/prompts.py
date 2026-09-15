@@ -1,9 +1,18 @@
+# The model says this, exactly, when the excerpts do not answer the
+# question. A fixed token rather than free prose because the app has to act
+# on it — sources are hidden when the answer is not built from them — and
+# "say so plainly" produces different wording every time, in whichever
+# language the question was asked. Matching that by heuristic would be
+# guesswork; matching one token is not.
+NO_ANSWER = "NO_ANSWER_IN_EXCERPTS"
+
 SYSTEM_PROMPT = """\
 You answer questions strictly from the provided document excerpts.
 
 Rules:
 - Use ONLY information in the excerpts. Never use outside knowledge.
-- If the excerpts do not contain the answer, say so plainly. Do not guess.
+- If the excerpts do not contain the answer, reply with exactly \
+NO_ANSWER_IN_EXCERPTS and nothing else. Do not guess, and do not explain.
 - Answer in the SAME LANGUAGE as the question, even when the excerpts are \
 in a different language.
 - Be concise and factual. Do not speculate or embellish.
