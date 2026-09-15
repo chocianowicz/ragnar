@@ -3,51 +3,8 @@ import pytest
 from core.models import Chunk, SearchResult
 from retrieval.agentic import AgenticSearch
 from retrieval.search import Search
-from tests.fakes import FakeEmbedder
-
-
-class ScriptedLLM:
-    """Returns the next scripted reply, recording what it was asked."""
-
-    def __init__(self, replies=None):
-        self.replies = list(replies or [])
-        self.calls = []
-
-    def generate(self, system, user, **kwargs):
-        self.calls.append((system, user))
-        return self.replies.pop(0) if self.replies else ""
-
-
-class FailingLLM:
-    def generate(self, system, user, **kwargs):
-        raise RuntimeError("ollama is down")
-
-
-class RecordingStore:
-    """Returns a fixed pool, remembering every query text it was given."""
-
-    def __init__(self, results=None, by_text=None):
-        self._results = results or []
-        self._by_text = by_text or {}
-        self.queries = []
-        self.is_hybrid = True
-
-    def search(self, vector, limit, doc_ids=None, text=None):
-        self.queries.append(text)
-        return self._by_text.get(text, self._results)[:limit]
-
-
-class PassThroughReranker:
-    """Scores by position, so ordering is predictable."""
-
-    def __init__(self, score=0.9):
-        self.score = score
-        self.queries = []
-
-    def rerank(self, query, candidates, top_k):
-        self.queries.append(query)
-        return [SearchResult(chunk=c.chunk, score=self.score)
-                for c in candidates][:top_k]
+from tests.fakes import (FakeEmbedder, ScriptedLLM, FailingLLM,
+                         RecordingStore, PassThroughReranker)
 
 
 def _result(text, index=0, score=0.5, doc_id="d"):
