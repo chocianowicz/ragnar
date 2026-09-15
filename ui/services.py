@@ -44,7 +44,12 @@ def build_services():
     def _warm() -> None:
         # Best effort. Ollama may be starting, or the model may not be
         # pulled yet; the app already reports that on its own screen.
-        for name, client in (("embedding", embedder), ("answer", llm)):
+        # Answer model first, embedder second. Ollama can displace a
+        # resident model while loading a large one, and observed on this
+        # machine: warming the embedder first left it unloaded again after
+        # the 14B answer model came up. Warming the small, fast one last
+        # means it is the one still there when the first question arrives.
+        for name, client in (("answer", llm), ("embedding", embedder)):
             try:
                 client.warm()
             except Exception as exc:                 # noqa: BLE001
