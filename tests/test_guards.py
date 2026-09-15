@@ -1,3 +1,5 @@
+import pytest
+
 from core.models import Chunk, SearchResult
 from generation.guards import should_refuse_aggregation, aggregation_refusal
 
@@ -65,6 +67,38 @@ def test_word_containing_aggregation_substring_is_NOT_refused():
 def test_polish_word_containing_aggregation_substring_is_NOT_refused():
     results = [_result("| Acme | 1000 |", True)]
     assert not should_refuse_aggregation("Gdzie mogę kupić bilet?", results)
+
+
+# Polish inflects its aggregation markers, so the terms for them are stems.
+# Anchoring the right edge with \b made every one of these unmatchable -
+# the character after the stem is an inflection vowel, never a boundary -
+# so these questions reached the model with table rows and an invitation to
+# do arithmetic. One case per stem family.
+@pytest.mark.parametrize("question", [
+    "Jaka jest największa kwota w tabeli?",     # najwięks- superlative
+    "Która pozycja jest najmniejsza?",          # najmniejsz-
+    "Jaka jest najwyższa stawka?",              # najwyżs-
+    "Jaka jest najniższa cena?",                # najniżs-
+    "Podaj sumę wszystkich pozycji",            # suma, declined
+    "Ile wynosi łączna kwota?",                 # łączn-
+    "Jaka jest średnia cena za sztukę?",        # średni-
+])
+def test_inflected_polish_aggregation_questions_are_refused(question):
+    results = [_result("| a | 1 |", True), _result("| b | 2 |", True)]
+    assert should_refuse_aggregation(question, results)
+
+
+@pytest.mark.parametrize("question", [
+    # "sumienie" (conscience) starts with the same letters as "suma" - the
+    # reason suma is enumerated by form rather than matched as a stem.
+    "Czy umowa obejmuje klauzulę sumienia?",
+    "Jaki jest okres wypowiedzenia?",
+    "Kto podpisał umowę?",
+    "Jakie są warunki płatności?",
+])
+def test_ordinary_polish_questions_over_tables_are_NOT_refused(question):
+    results = [_result("| Acme | 1000 |", True), _result("| Beta | 2 |", True)]
+    assert not should_refuse_aggregation(question, results)
 
 
 def _summary(text="Aggregate column summary: total (sum): 6000"):
