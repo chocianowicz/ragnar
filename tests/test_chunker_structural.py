@@ -2,7 +2,7 @@ import pytest
 
 from ingestion.parser import Block, ParsedDocument
 from ingestion.chunkers.fixed import FixedChunker
-from ingestion.chunkers.structural import StructuralChunker
+from ingestion.chunkers.structural import StructuralChunker, CHARS_PER_TOKEN
 from ingestion.chunkers.registry import build_chunker
 
 
@@ -121,3 +121,22 @@ def test_sheet_name_is_prepended_to_table_chunk_text():
     assert "Sheet: Q1 Sales" in chunks[0].text
     assert "Acme" in chunks[0].text
     assert chunks[0].sheet == "Q1 Sales"
+
+
+def test_sheet_prefix_is_counted_against_the_chunk_budget():
+    """The prefix is prepended after grouping, so its width has to come out
+    of the budget first or every chunk of a named sheet runs over."""
+    from ingestion.parser import Block, ParsedDocument
+
+    row = "| " + "x" * 120 + " |"
+    table = "| A |\n|---|\n" + "\n".join(row for _ in range(40))
+    parsed = ParsedDocument(
+        markdown="", page_count=1,
+        blocks=[Block(text=table, page=1, is_table=True, sheet="Quarterly")],
+    )
+
+    chunks = StructuralChunker(target_tokens=200).chunk(parsed, "d", "f.xlsx")
+
+    assert chunks
+    assert all(c.text.startswith("Sheet: Quarterly") for c in chunks)
+    assert all(len(c.text) <= int(200 * CHARS_PER_TOKEN) for c in chunks)

@@ -54,12 +54,20 @@ class StructuralChunker:
 
             if head.is_table:
                 from ingestion.tables import chunk_table_markdown
-                pieces = chunk_table_markdown(text, rows_per_group=self.rows_per_group) or [text]
-                if head.sheet:
-                    # Put the sheet name into the embedded text (not just the
-                    # citation metadata) so questions that reference a sheet
-                    # by name — "what's in the Q2 sheet?" — actually retrieve.
-                    pieces = [f"Sheet: {head.sheet}\n\n{p}" for p in pieces]
+                # The sheet name goes into the embedded text (not just the
+                # citation metadata) so questions that reference a sheet by
+                # name — "what's in the Q2 sheet?" — actually retrieve. It
+                # is prepended after grouping, so its cost comes out of the
+                # budget first; otherwise every chunk of a named sheet
+                # silently runs over target by the width of this prefix.
+                prefix = f"Sheet: {head.sheet}\n\n" if head.sheet else ""
+                # Tables get the same size budget as prose. Row count alone
+                # left wide tables producing chunks many times the target.
+                pieces = chunk_table_markdown(
+                    text, rows_per_group=self.rows_per_group,
+                    max_chars=self.target_chars - len(prefix)) or [text]
+                if prefix:
+                    pieces = [f"{prefix}{p}" for p in pieces]
             else:
                 pieces = self._split(text)
 
