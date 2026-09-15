@@ -73,3 +73,17 @@ class OllamaLLM:
                 if payload.get("done"):
                     break
                 yield payload["message"]["content"]
+
+    def warm(self) -> None:
+        """Load the model without generating anything.
+
+        /api/generate with an empty prompt makes Ollama load the weights
+        and return immediately. Called at startup so the first question
+        of a session does not pay the load.
+        """
+        self._client.post(
+            f"{self.base_url}/api/generate",
+            json={"model": self.model, "prompt": "",
+                  "keep_alive": self.keep_alive},
+            timeout=self.timeout,
+        ).raise_for_status()

@@ -46,3 +46,7 @@ class OllamaEmbedder:
                 f"got {len(vectors)}"
             )
         return vectors
+
+    def warm(self) -> None:
+        """Load the embedding model by embedding one short text."""
+        self.embed(["warm-up"])

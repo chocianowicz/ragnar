@@ -4,6 +4,9 @@ Kept apart from the panels and the page script so `build_services` (the
 single cached wiring point) and the small formatting helpers can be reused
 without importing Streamlit page logic.
 """
+import logging
+import threading
+
 import httpx
 import streamlit as st
 
@@ -37,6 +40,20 @@ def build_services():
                         upsert_batch=cfg.upsert_batch, hybrid=cfg.hybrid)
     store.ensure_collection()
     llm = OllamaLLM(cfg.ollama_url, cfg.llm_model)
+
+    def _warm() -> None:
+        # Best effort. Ollama may be starting, or the model may not be
+        # pulled yet; the app already reports that on its own screen.
+        for name, client in (("embedding", embedder), ("answer", llm)):
+            try:
+                client.warm()
+            except Exception as exc:                 # noqa: BLE001
+                logging.getLogger(__name__).info(
+                    "%s model not warmed: %s", name, exc)
+
+    # Off the request path: loading the answer model takes tens of
+    # seconds, and the page should render while that happens.
+    threading.Thread(target=_warm, daemon=True, name="warm-models").start()
 
     pipeline = Pipeline(DoclingParser(), build_chunker(cfg.chunking),
                         embedder, store)

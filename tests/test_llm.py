@@ -106,3 +106,17 @@ def test_keep_alive_is_configurable():
     llm.generate("sys", "user")
 
     assert client.calls[0]["keep_alive"] == "1h"
+
+
+def test_warm_loads_the_model_without_generating():
+    """/api/generate with an empty prompt loads weights and returns at
+    once — the cheapest way to pay the load before the first question."""
+    client = StubClient({"done": True})
+    llm = OllamaLLM("http://x", "m", client=client)
+
+    llm.warm()
+
+    body = client.calls[0]
+    assert body["model"] == "m"
+    assert body["prompt"] == ""
+    assert body["keep_alive"] == "10m"

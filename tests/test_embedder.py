@@ -95,3 +95,13 @@ def test_embedder_sends_keep_alive():
     embedder.embed(["a"])
 
     assert client.calls[0]["keep_alive"] == "10m"
+
+
+def test_warm_embeds_one_token_to_load_the_model():
+    client = StubClient({"embeddings": [[0.1]]})
+    embedder = OllamaEmbedder("http://x", "bge-m3", client=client)
+
+    embedder.warm()
+
+    assert len(client.calls) == 1
+    assert client.calls[0]["keep_alive"] == "10m"
