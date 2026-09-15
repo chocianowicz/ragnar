@@ -934,7 +934,11 @@ Expected: no `start(` call has three arguments; `Job(chat_id="a")`.
 - [ ] **Step 2: Run to verify they fail**
 
 Run: `$RUN python -m pytest tests/test_jobs.py -v`
-Expected: failures with `TypeError: start() missing 1 required positional argument: 'work'` (the old signature still expects `question`).
+Expected: 9 failed, 2 passed. Eight fail with `TypeError: start() missing 1
+required positional argument: 'work'`; `test_appending_from_several_threads_loses_nothing`
+fails with `TypeError: Job.__init__() missing 1 required positional argument:
+'question'`. `test_running_is_false_for_an_unknown_chat` and
+`test_chat_ids_are_unique` pass throughout.
 
 - [ ] **Step 3: Implement**
 
@@ -954,7 +958,9 @@ In `ui/app.py`:
         lambda job: answer_job(job, question, history, doc_ids_filter, query),
     )
 ```
-- change `else:  # noqa: RET505` to `else:`.
+- change `else:  # noqa: RET505` to `else:` — the suppression was only ever
+  needed because the branch above it returned, which is no longer true once
+  `job.mode` goes; mention it in the commit message.
 
 - [ ] **Step 4: Run to verify they pass**
 
@@ -970,6 +976,8 @@ Run the same AppTest one-liner as Task 7 Step 6. Expected: `exception: none`.
 ```bash
 git add ui/jobs.py ui/app.py tests/test_jobs.py
 git commit -m "chore: remove Job.mode and Job.question, never read
+
+Also drops a now-unnecessary RET505 suppression in the same block.
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
@@ -1066,8 +1074,10 @@ def test_an_entry_with_neither_is_rejected():
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `$RUN python -m pytest tests/test_eval_harness.py -k turns -v`
-Expected: 4 failed with `ImportError: cannot import name 'turns_of'`.
+Run: `$RUN python -m pytest tests/test_eval_harness.py -v`
+Expected: 4 failed with `ImportError: cannot import name 'turns_of'`, the rest
+pass. (Do not filter with `-k turns`: only one of the four test names contains
+that substring.)
 
 - [ ] **Step 3: Implement `turns_of`**
 
@@ -1237,7 +1247,9 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - [ ] **Step 1: Unit suite**
 
 Run: `$RUN python -m pytest tests -q 2>&1 | tail -1`
-Expected: `N passed, 25 skipped` with N ≥ 253 + 22 (the tests this plan adds); zero failures.
+Expected: `286 passed, 25 skipped`. Baseline was 253 passed; this plan adds 33
+pytest items (24 test functions, two of which are parametrized into 6 and 5
+cases). Zero failures.
 
 - [ ] **Step 2: Integration suite**
 
@@ -1248,15 +1260,38 @@ Expected: all pass, zero skipped. This includes the language and end-to-end slic
 
 - [ ] **Step 3: Confirm keep_alive live**
 
-Run:
+Two things make the naive version of this check useless: `docker compose
+restart app` does not run `build_services` (the container's CMD is
+`streamlit run`, and Streamlit only executes the script when a session
+connects), and after the integration suite both models are resident anyway
+because every request now sends `keep_alive`. So unload first, and connect a
+session explicitly.
+
 ```bash
-docker compose restart app && sleep 20
-curl -s localhost:11434/api/ps | python3 -c "
-import sys, json, datetime
-for m in json.load(sys.stdin).get('models', []):
-    print(m['name'], 'expires', m.get('expires_at', '?')[:19])"
+for m in qwen2.5:14b bge-m3; do
+  curl -s -m 30 localhost:11434/api/generate -d "{\"model\":\"$m\",\"keep_alive\":0}" -o /dev/null
+done
+sleep 3 && curl -s localhost:11434/api/ps      # expect: models: []
+
+docker compose restart app
+until [ "$(curl -s -o /dev/null -w '%{http_code}' -m 5 http://localhost:8501/)" = "200" ]; do sleep 3; done
+curl -s localhost:11434/api/ps                  # still []: no session yet
+
+$RUN python -c "
+from streamlit.testing.v1 import AppTest
+AppTest.from_file('ui/app.py', default_timeout=180).run()"
+
+# the answer model takes ~100s to load; poll
+for i in $(seq 1 30); do sleep 5; curl -s localhost:11434/api/ps \
+  | python3 -c "import sys,json;print([m['name'] for m in json.load(sys.stdin)['models']])"; done
 ```
-Expected: both `qwen2.5:14b` and `bge-m3` listed (the startup warm loaded them), each with an `expires` time roughly ten minutes from now. If nothing is listed, the warm thread failed — check `docker compose logs app | grep "not warmed"`.
+Expected: empty until the session connects, then `qwen2.5:14b` appears. Confirm
+no failures with `docker compose logs app --since=5m | grep "not warmed"`.
+
+Note what this proves and what it does not: it proves the warm thread runs and
+loads the answer model. The warm happens on first session, not at container
+start — starting the worker (and the warm) with the container is a separate
+item in the improvement plan's §8.
 
 - [ ] **Step 4: Confirm the app**
 
@@ -1272,5 +1307,9 @@ State: test counts before and after, the integration result, what `ollama ps` sh
 
 - Extracting `answer_job` out of `ui/app.py` — Phase 1. This plan touches `answer_job` minimally so that extraction does not conflict.
 - Trust levels, quarantine, excluding flagged chunks from helper prompts — Phase 2.
+- Adversarial *golden entries* — Task 11 records `flagged` on each case so such
+  an entry can assert both halves ("the visible fact was answered" and "the
+  injection was caught"), but writing the entries is the human's task, with the
+  rest of the golden set.
 - Any chunking, index or prompt-format change — nothing here needs a re-ingest, and that is deliberate.
 - Writing the golden-set cases themselves — the human's task, per the plan index. This plan only makes the harness able to run them.
