@@ -107,6 +107,11 @@ class Config:
         return self._raw["retrieval"]["score_floor"]
 
     @property
+    def reranker_max_length(self) -> int:
+        """Token window per rerank pair. See retrieval/reranker.py."""
+        return self._raw["models"].get("reranker_max_length", 512)
+
+    @property
     def embedding_batch(self) -> int:
         """Texts per /api/embed request during ingestion."""
         return self._raw["models"].get("embedding_batch", 64)

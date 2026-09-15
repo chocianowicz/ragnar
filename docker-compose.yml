@@ -13,10 +13,18 @@ services:
       # Bind-mount the whole repo for live code reload during development;
       # this already includes ./data, so no separate data mount is needed.
       - ./:/app
+      # The reranker weights (~2GB) are pulled from HuggingFace the first
+      # time a question is reranked. Without somewhere persistent to put
+      # them, every fresh container downloads them again — the README's
+      # "one-time download on first run" was once per container, which also
+      # means the app is not actually offline-capable until it has been
+      # online once, and is why .env.example mentions a rate-limit warning.
+      - model_cache:/cache
     environment:
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       QDRANT_URL: http://qdrant:6333
       HF_TOKEN: ${HF_TOKEN:-}
+      HF_HOME: /cache/huggingface
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -37,3 +45,4 @@ services:
 
 volumes:
   qdrant_storage:
+  model_cache:

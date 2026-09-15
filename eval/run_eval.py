@@ -83,7 +83,9 @@ def run_cases(score_floor: float | None = None,
 
     embedder = OllamaEmbedder(cfg.ollama_url, cfg.embedding_model)
     store = QdrantStore(cfg.qdrant_url, cfg.collection, cfg.embedding_dim)
-    search = Search(embedder, store, BGEReranker(cfg.reranker_model),
+    search = Search(embedder, store,
+                    BGEReranker(cfg.reranker_model,
+                                max_length=cfg.reranker_max_length),
                     cfg.candidates, cfg.top_k, floor)
     answerer = Answerer(OllamaLLM(cfg.ollama_url, cfg.llm_model))
 

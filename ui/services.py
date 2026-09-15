@@ -45,7 +45,8 @@ def build_services():
     return {
         "cfg": cfg, "storage": storage, "registry": registry, "chats": chats,
         "store": store, "pipeline": pipeline, "search": Search(
-            embedder, store, reranker=BGEReranker(cfg.reranker_model),
+            embedder, store, reranker=BGEReranker(cfg.reranker_model,
+                                 max_length=cfg.reranker_max_length),
             candidates=cfg.candidates, top_k=cfg.top_k,
             score_floor=cfg.score_floor),
         "answerer": Answerer(llm), "worker": worker,

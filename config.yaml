@@ -3,6 +3,10 @@ models:
   embedding: bge-m3
   embedding_dim: 1024
   reranker: BAAI/bge-reranker-v2-m3
+  # Token window per rerank pair. The model accepts 8192 and
+  # sentence-transformers defaults to that; chunks target 500, so
+  # scoring at 8192 was ~4.5x slower for nothing.
+  reranker_max_length: 512
   # Texts per /api/embed request. Ingestion embeds a whole document at
   # once, so this is what keeps a large PDF from riding on one timeout.
   embedding_batch: 64
