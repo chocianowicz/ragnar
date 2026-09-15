@@ -1,9 +1,34 @@
+import re
+
 import pandas as pd
 
 # A column counts as numeric (and thus aggregatable) when at least this
 # fraction of its values parse as numbers. Keeps "ID" columns like "E001"
 # out while catching "Salary" columns stored as strings.
 NUMERIC_THRESHOLD = 0.8
+
+# Header words that mark a column as an identifier rather than a
+# quantity. Summing an identifier column is never meaningful, and on the
+# real corpus it produced "CN code — total (sum): 129445222522".
+_IDENTIFIER_HEADER = re.compile(
+    r"\b(id|code|no\.?|nr|number|ref|reference|sku|cn|isbn|ean|key)\b", re.I)
+
+# Without a header hint, a column is treated as an identifier when every
+# value is integral and nearly all are distinct — but only with enough
+# rows to be sure. Three distinct integers is just a small table.
+_IDENTIFIER_MIN_ROWS = 5
+_IDENTIFIER_UNIQUE_SHARE = 0.9
+
+
+def _looks_like_identifier(name, numeric: pd.Series) -> bool:
+    if _IDENTIFIER_HEADER.search(str(name)):
+        return True
+    values = numeric.dropna()
+    if len(values) < _IDENTIFIER_MIN_ROWS:
+        return False
+    integral = bool((values == values.round()).all())
+    distinct_share = values.nunique() / len(values)
+    return integral and distinct_share >= _IDENTIFIER_UNIQUE_SHARE
 
 
 def _fmt(value) -> str:
@@ -37,6 +62,8 @@ def summarize_table(df: pd.DataFrame, sheet: str | None = None) -> str | None:
         numeric = pd.to_numeric(df[col], errors="coerce")
         n = int(numeric.notna().sum())
         if n == 0 or n < NUMERIC_THRESHOLD * len(df):
+            continue
+        if _looks_like_identifier(col, numeric):
             continue
         parts.append(
             f"{col} — total (sum): {_fmt(numeric.sum())}; "

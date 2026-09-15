@@ -54,3 +54,34 @@ def test_duplicate_columns_dont_block_summarising_the_unique_ones():
     assert s is not None
     assert "Quantity" in s   # the one unambiguous numeric column
     assert "Value" not in s  # ambiguous duplicate, correctly skipped
+
+
+def test_identifier_named_column_is_not_summarised():
+    """Summing CN codes produced 'CN code — total (sum): 129445222522' on
+    the real corpus: meaningless, and it embeds near aggregation questions."""
+    df = pd.DataFrame({"CN code": [31022100, 31022900, 31023010],
+                       "Value": [0.022, 0.019, 0.0]})
+    s = summarize_table(df)
+
+    assert s is not None
+    assert "CN code" not in s
+    assert "Value" in s
+
+
+def test_high_cardinality_integer_column_is_not_summarised():
+    """No header hint, but every value distinct and integral across
+    enough rows to be sure: an id, not a measurement."""
+    df = pd.DataFrame({"Ref": list(range(100001, 100011)),
+                       "Amount": [10.5] * 10})
+    s = summarize_table(df)
+
+    assert "Ref" not in s
+    assert "Amount" in s
+
+
+def test_small_table_of_distinct_integers_is_still_summarised():
+    """Three distinct integers is not evidence of an id column; the
+    cardinality rule must not kill every small table."""
+    df = pd.DataFrame({"Amount": [100, 200, 300]})
+
+    assert "Amount" in summarize_table(df)
