@@ -1,0 +1,340 @@
+# Golden set for the currently indexed corpus (climate NDCs + EU CBAM).
+#
+# ── STATUS: DRAFTED, NOT YET VERIFIED ────────────────────────────────────
+# Every expected_answer below was read out of the indexed document text and
+# the passage it came from is recorded in `source_text`. Nothing here is
+# invented. But it has not been checked by a human, and a golden set with a
+# wrong answer in it is worse than a small one: it punishes correct
+# behaviour and rewards the matching mistake. Work through it, correct what
+# is wrong, delete what you disagree with, then remove this banner.
+#
+# ── WHAT THIS MEASURES, AND WHAT IT DOES NOT ─────────────────────────────
+# This corpus is a stand-in. The real one is prose — contracts and policies
+# — and a golden set written against it will disagree with this one about
+# what matters. Treat these numbers as a regression baseline for changes to
+# chunking, retrieval and the floor, not as a statement about how the tool
+# performs on the documents it is actually for.
+#
+# ── SCHEMA ───────────────────────────────────────────────────────────────
+#   question:        one turn          } exactly one of these
+#   turns:           a follow-up chain } (only the last turn is scored)
+#   expected_answer: what a correct answer must contain
+#   expected_sources: filenames the citation must name
+#   out_of_corpus:   the answer is not in the documents -> must refuse
+#   expect_refusal:  must refuse even though it is in-corpus (aggregation)
+#   source_text:     the passage the answer was read from — for your review
+#
+# Run:  python eval/run_eval.py --golden eval/golden_set.real.yaml
+#       python eval/run_eval.py --golden eval/golden_set.real.yaml --calibrate
+
+# ═══════════════════════════════════════════════════════════════════
+# In-corpus, prose — the main case
+# ═══════════════════════════════════════════════════════════════════
+
+- question: "What is Norway's emission reduction target for 2035?"
+  expected_answer: "at least 70-75 per cent compared to 1990 levels"
+  expected_sources: ["Norways NDC for 2035..pdf"]
+  out_of_corpus: false
+  source_text: "Norway's Nationally Determined Contribution (NDC) for 2035 is to reduce greenhouse gas emissions by at least 70-75 per cent compared to 1990 levels."
+
+- question: "What is the Republic of Korea's 2035 NDC target?"
+  expected_answer: "53 to 61% reduction in net GHG emissions by 2035 compared to the 2018 level"
+  expected_sources: ["The Republic of Koreas 2035 NDC.pdf"]
+  out_of_corpus: false
+  source_text: "the Republic of Korea's 2035 NDC sets a target at 53 to 61% reduction in net GHG emissions by 2035 compared to the 2018 level (742.3 MtCO2eq)."
+
+- question: "What were Korea's emissions in its base year?"
+  expected_answer: "742.3 MtCO2eq"
+  expected_sources: ["The Republic of Koreas 2035 NDC.pdf"]
+  out_of_corpus: false
+  source_text: "compared to the 2018 level (742.3 MtCO2eq)"
+
+- question: "What was Korea's 2030 NDC target?"
+  expected_answer: "40% from the 2018 level"
+  expected_sources: ["The Republic of Koreas 2035 NDC.pdf"]
+  out_of_corpus: false
+  source_text: "its enhanced update of the 2030 NDC which sets an ambitious target of reducing national GHG emissions by 40% from the 2018 level."
+
+- question: "What is Iceland's 2035 target for the sectors covered by the Effort Sharing Regulation?"
+  expected_answer: "50-55 per cent net reduction by 2035 compared to 2005"
+  expected_sources: ["Iceland's 2035 NDC.pdf"]
+  out_of_corpus: false
+  source_text: "Iceland is committed to a target of 50-55 per cent net reduction of greenhouse gas emissions by 2035 compared to 2005, in the sectors covered by the scope of the EU's Effort Sharing Regulation (ESR)"
+
+- question: "When was Iceland's 2035 NDC communicated to the UNFCCC?"
+  expected_answer: "30 September 2025"
+  expected_sources: ["Iceland's 2035 NDC.pdf"]
+  out_of_corpus: false
+  source_text: "Iceland's 2035 Nationally Determined Contribution (NDC). Communicated to the UNFCCC on 30 September 2025"
+
+- question: "What is Iceland's LULUCF target?"
+  expected_answer: "400-500 kt CO2 net reduction by 2035 compared to 2025"
+  expected_sources: ["Iceland's 2035 NDC.pdf"]
+  out_of_corpus: false
+  source_text: "LULUCF: Iceland is committed to a target of 400-500 kt CO2 per cent net reduction of greenhouse gas emissions from the LULUCF sector by 2035 compared to 2025."
+
+- question: "What is Georgia's greenhouse gas target for 2030?"
+  expected_answer: "47% below 1990 levels"
+  expected_sources: ["NDC_3.0_Georgia_EN.pdf"]
+  out_of_corpus: false
+  source_text: "Georgia is fully committed to limit total net greenhouse gas emissions by 47% below 1990 levels by 2030, with an extended target of 50% by 2035"
+
+- question: "By how much does Georgia intend to cut emissions from energy generation and supply by 2030?"
+  expected_answer: "15% compared to the without measure (WOM) scenario"
+  expected_sources: ["NDC_3.0_Georgia_EN.pdf"]
+  out_of_corpus: false
+  source_text: "By 2030, the country intends to cut emissions from energy generation and supply by 15%, compared to the without measure (WOM) scenario, described in BTR."
+
+- question: "What emissions reduction is Azerbaijan aiming for by 2035?"
+  expected_answer: "40% compared to 1990"
+  expected_sources: ["NDC 3.0 Report_Azerbaijan.pdf"]
+  out_of_corpus: false
+  source_text: "The country aims to achieve 40% emissions reduction by 2035, compared to 1990, setting a transformative and highly ambitious target."
+
+- question: "What is the EU's 2030 emissions reduction target?"
+  expected_answer: "at least 55% net domestic reduction compared to 1990"
+  expected_sources: ["DK-2025-11-05 EU NDC.pdf"]
+  out_of_corpus: false
+  source_text: "a net domestic reduction of at least 55% in GHG emissions by 2030 compared to 1990"
+
+- question: "By how much will India reduce the emissions intensity of its GDP by 2035?"
+  expected_answer: "47 percent from the 2005 level"
+  expected_sources: ["INDIA NDC 2031-35.pdf"]
+  out_of_corpus: false
+  source_text: "To reduce Emissions Intensity of its GDP by 47 percent by 2035, from 2005 level."
+
+- question: "What share of historical global greenhouse gas emissions is Timor-Leste responsible for?"
+  expected_answer: "0.003%"
+  expected_sources: ["Timor-Leste Updated NDC 3.0.pdf"]
+  out_of_corpus: false
+  source_text: "Having responsibility for just 0.003 % of historical global greenhouse gas emissions, Timor-Leste commits to continue developing through sustainable"
+
+- question: "How much of Guyana's national territory is covered by forest?"
+  expected_answer: "approximately 85 percent"
+  expected_sources: ["Guyanas NDC 2025-2035 V2.pdf"]
+  out_of_corpus: false
+  source_text: "maintaining one of the world's largest remaining intact tropical forest ecosystems, covering approximately 85 percent of the national territory"
+
+- question: "How much carbon do Guyana's forests store?"
+  expected_answer: "more than 21 billion tonnes of carbon dioxide equivalent"
+  expected_sources: ["Guyanas NDC 2025-2035 V2.pdf"]
+  out_of_corpus: false
+  source_text: "These forests store more than 21 billion tonnes of carbon dioxide equivalent"
+
+- question: "Which year does Saudi Arabia use as the base year for its second NDC?"
+  expected_answer: "2019"
+  expected_sources: ["2nd KSA NDC Document Final Document (28122025)_DNA.pdf"]
+  out_of_corpus: false
+  source_text: "on the basis of a dynamic baseline, with the year 2019 designated as the base year for this NDC."
+
+- question: "What did Indonesia pledge in its Intended NDC in 2015?"
+  expected_answer: "29% through domestic efforts, up to 41% with international support, compared to business as usual"
+  expected_sources: ["Indonesia_Second NDC_2025.10.24.pdf"]
+  out_of_corpus: false
+  source_text: "the submission of the Intended NDC in 2015, which pledged emissions reduction of 29% through domestic efforts (unconditional) and up to 41% with international support (conditional) compared to BAU"
+
+# ═══════════════════════════════════════════════════════════════════
+# In-corpus, exact identifiers — what the lexical half of hybrid exists for
+# ═══════════════════════════════════════════════════════════════════
+
+- question: "What is the Column A benchmark value for CN code 31022100?"
+  expected_answer: "0.022"
+  expected_sources: ["CBAM Benchmarks_20260206.xlsx"]
+  out_of_corpus: false
+  source_text: "| 31022100 | Ammonium sulphate ... | 0.022 | | 0.414 |"
+
+- question: "What is the Column B benchmark value for CN code 31022100?"
+  expected_answer: "0.414"
+  expected_sources: ["CBAM Benchmarks_20260206.xlsx"]
+  out_of_corpus: false
+  source_text: "| 31022100 | Ammonium sulphate ... | 0.022 | | 0.414 |"
+
+- question: "What is the Column A benchmark for CN code 28141000?"
+  expected_answer: "1.522"
+  expected_sources: ["CBAM Benchmarks_20260206.xlsx"]
+  out_of_corpus: false
+  source_text: "28141000 || 1.522 || 1.522"
+
+- question: "Which CN code covers cement clinkers?"
+  expected_answer: "2523 10 00"
+  expected_sources: ["Guidance document on CBAM implementation for installation operators outside the EU.pdf"]
+  out_of_corpus: false
+  source_text: "Precursor goods of relevance are 'cement clinker' (CN code 2523 10 00), which includes both white clinker"
+
+# ═══════════════════════════════════════════════════════════════════
+# Needs more than one document — what "thorough search" has to earn
+# ═══════════════════════════════════════════════════════════════════
+
+- question: "Do Norway and Iceland use the same base year for their 2035 targets?"
+  expected_answer: "No — Norway uses 1990 and Iceland uses 2005"
+  expected_sources: ["Norways NDC for 2035..pdf", "Iceland's 2035 NDC.pdf"]
+  out_of_corpus: false
+  source_text: "Norway: 'compared to 1990 levels'. Iceland: 'by 2035 compared to 2005'."
+
+- question: "Whose 2035 target is more ambitious, Norway's or Azerbaijan's?"
+  expected_answer: "Norway's, at 70-75% against Azerbaijan's 40%"
+  expected_sources: ["Norways NDC for 2035..pdf", "NDC 3.0 Report_Azerbaijan.pdf"]
+  out_of_corpus: false
+  source_text: "Norway: at least 70-75 per cent vs 1990. Azerbaijan: 40% by 2035 vs 1990."
+
+- question: "How do Korea's and Georgia's 2035 targets compare?"
+  expected_answer: "Korea 53-61% against 2018; Georgia 50% against 1990"
+  expected_sources: ["The Republic of Koreas 2035 NDC.pdf", "NDC_3.0_Georgia_EN.pdf"]
+  out_of_corpus: false
+  source_text: "Korea: 53 to 61% ... compared to the 2018 level. Georgia: extended target of 50% by 2035 (below 1990 levels)."
+
+- question: "Which countries in these documents measure their targets against 1990?"
+  expected_answer: "Norway, Georgia, Azerbaijan and the EU"
+  expected_sources: ["Norways NDC for 2035..pdf", "NDC_3.0_Georgia_EN.pdf", "NDC 3.0 Report_Azerbaijan.pdf", "DK-2025-11-05 EU NDC.pdf"]
+  out_of_corpus: false
+  source_text: "Four separate documents each state a 1990 baseline."
+
+# ═══════════════════════════════════════════════════════════════════
+# Follow-up chains — only the last turn is scored
+# ═══════════════════════════════════════════════════════════════════
+
+- turns:
+    - "What is Norway's emission reduction target for 2035?"
+    - "And what is the base year for that?"
+  expected_answer: "1990"
+  expected_sources: ["Norways NDC for 2035..pdf"]
+  out_of_corpus: false
+  source_text: "reduce greenhouse gas emissions by at least 70-75 per cent compared to 1990 levels"
+
+- turns:
+    - "What is the Republic of Korea's 2035 NDC target?"
+    - "What were its emissions in that base year?"
+  expected_answer: "742.3 MtCO2eq"
+  expected_sources: ["The Republic of Koreas 2035 NDC.pdf"]
+  out_of_corpus: false
+  source_text: "compared to the 2018 level (742.3 MtCO2eq)"
+
+- turns:
+    - "What is Iceland's 2035 NDC target?"
+    - "When was it communicated to the UNFCCC?"
+  expected_answer: "30 September 2025"
+  expected_sources: ["Iceland's 2035 NDC.pdf"]
+  out_of_corpus: false
+  source_text: "Communicated to the UNFCCC on 30 September 2025"
+
+- turns:
+    - "What is Georgia's greenhouse gas target for 2030?"
+    - "And for 2035?"
+  expected_answer: "50%"
+  expected_sources: ["NDC_3.0_Georgia_EN.pdf"]
+  out_of_corpus: false
+  source_text: "47% below 1990 levels by 2030, with an extended target of 50% by 2035"
+
+# ═══════════════════════════════════════════════════════════════════
+# Out of corpus, plausible — the cases the floor exists for
+# ═══════════════════════════════════════════════════════════════════
+
+- question: "What is Brazil's 2035 NDC target?"
+  expected_answer: ""
+  expected_sources: []
+  out_of_corpus: true
+  source_text: "Brazil is not among the 28 indexed documents."
+
+- question: "What is Japan's 2035 emissions reduction target?"
+  expected_answer: ""
+  expected_sources: []
+  out_of_corpus: true
+  source_text: "Japan is not among the 28 indexed documents."
+
+- question: "What is Portugal's NDC target for 2035?"
+  expected_answer: ""
+  expected_sources: []
+  out_of_corpus: true
+  source_text: "Portugal is not among the 28 indexed documents."
+
+- question: "What is Canada's 2035 emissions reduction commitment?"
+  expected_answer: ""
+  expected_sources: []
+  out_of_corpus: true
+  source_text: "Canada is not among the 28 indexed documents."
+
+- question: "What is the phone number of Norway's climate minister?"
+  expected_answer: ""
+  expected_sources: []
+  out_of_corpus: true
+  source_text: "No contact details appear in the corpus."
+
+- question: "How many staff work at the CBAM registry helpdesk?"
+  expected_answer: ""
+  expected_sources: []
+  out_of_corpus: true
+  source_text: "Staffing is not discussed in the CBAM guidance."
+
+- question: "What is the CBAM benchmark value for CN code 99999999?"
+  expected_answer: ""
+  expected_sources: []
+  out_of_corpus: true
+  source_text: "Not a CN code present in the benchmarks sheet."
+
+- question: "What penalty did Azerbaijan pay for missing its 2020 target?"
+  expected_answer: ""
+  expected_sources: []
+  out_of_corpus: true
+  source_text: "No such penalty is described; the premise is false."
+
+# ═══════════════════════════════════════════════════════════════════
+# Out of corpus, obvious — sanity
+# ═══════════════════════════════════════════════════════════════════
+
+- question: "What is the capital of France?"
+  expected_answer: ""
+  expected_sources: []
+  out_of_corpus: true
+  source_text: "General knowledge, deliberately absent from the corpus."
+
+- question: "Who won the 2022 FIFA World Cup?"
+  expected_answer: ""
+  expected_sources: []
+  out_of_corpus: true
+  source_text: "General knowledge, deliberately absent from the corpus."
+
+# ═══════════════════════════════════════════════════════════════════
+# Aggregation over a table — in-corpus, and must still refuse
+# ═══════════════════════════════════════════════════════════════════
+
+- question: "What is the total of all Column A benchmark values in the sheet?"
+  expected_answer: ""
+  expected_sources: []
+  out_of_corpus: false
+  expect_refusal: true
+  source_text: "1,800+ rows. The guard must decline rather than total the handful of rows retrieved."
+
+- question: "What is the average benchmark value across all CN codes?"
+  expected_answer: ""
+  expected_sources: []
+  out_of_corpus: false
+  expect_refusal: true
+  source_text: "Same: an average over a table the model has only partly seen."
+
+# ═══════════════════════════════════════════════════════════════════
+# Non-English — the answer must be in the language of the question
+# ═══════════════════════════════════════════════════════════════════
+
+- question: "¿Cuándo se publicó la Ley General de Cambio Climático de México?"
+  expected_answer: "junio de 2012"
+  expected_sources: ["NDC 3.0 México_spanish.pdf"]
+  out_of_corpus: false
+  source_text: "la Ley General de Cambio Climático (LGCC), publicada en junio de 2012, constituye el marco jurídico fundamental de la política climática de México"
+
+- question: "Quel est l'indice de vulnérabilité du secteur de la santé au Bénin?"
+  expected_answer: "0,760 en 2023"
+  expected_sources: ["CDN 3.0_BENIN.pdf"]
+  out_of_corpus: false
+  source_text: "le secteur de la santé est l'un des plus vulnérables aux changements climatiques, comme en témoigne son indice de vulnérabilité de 0,760 en 2023"
+
+- question: "Quelle réduction d'émissions visait la CDN 2.0 du Bénin à l'horizon 2030?"
+  expected_answer: "environ 48,75 Mt E-CO2, soit 20,15%"
+  expected_sources: ["CDN 3.0_BENIN.pdf"]
+  out_of_corpus: false
+  source_text: "La CDN 2.0 visait à réduire les émissions de gaz à effet de serre (GES), hors UTCATF, d'environ 48,75 Mt E-CO2, soit 20,15% à l'horizon 2030"
+
+- question: "Jaki jest cel redukcji emisji Norwegii na rok 2035?"
+  expected_answer: "co najmniej 70-75% w porównaniu z poziomem z 1990 roku"
+  expected_sources: ["Norways NDC for 2035..pdf"]
+  out_of_corpus: false
+  source_text: "English source; the question is Polish, so the answer must be Polish too."

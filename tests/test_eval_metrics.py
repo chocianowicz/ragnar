@@ -53,3 +53,17 @@ def test_citation_accuracy_rejects_substring_filename_match():
         "out_of_corpus": False,
     }]
     assert citation_accuracy(cases) == 0.0
+
+
+def test_expect_refusal_overrides_out_of_corpus():
+    """An aggregation question is in-corpus but must still be refused: the
+    guard exists so the model never adds up rows it only partly sees.
+    Without this the golden set would score a correct refusal as a miss."""
+    cases = [{"out_of_corpus": False, "expect_refusal": True, "refused": True}]
+    assert refusal_accuracy(cases) == 1.0
+
+
+def test_expect_refusal_defaults_to_out_of_corpus():
+    cases = [{"out_of_corpus": True, "refused": True},
+             {"out_of_corpus": False, "refused": False}]
+    assert refusal_accuracy(cases) == 1.0
