@@ -16,3 +16,16 @@ def test_chunk_citation_label_uses_sheet_for_spreadsheets():
 def test_chunk_citation_label_falls_back_to_filename():
     c = Chunk(doc_id="a1", filename="notes.md", text="x", chunk_index=0)
     assert c.citation_label() == "notes.md"
+
+
+def test_chunk_key_identifies_a_chunk_within_its_document():
+    from core.models import Chunk
+
+    a = Chunk(doc_id="d1", filename="f.pdf", text="x", chunk_index=3)
+    b = Chunk(doc_id="d1", filename="OTHER.pdf", text="y", chunk_index=3)
+    c = Chunk(doc_id="d2", filename="f.pdf", text="x", chunk_index=3)
+    d = Chunk(doc_id="d1", filename="f.pdf", text="x", chunk_index=4)
+
+    assert a.key() == b.key()      # identity is doc + index, nothing else
+    assert a.key() != c.key()
+    assert a.key() != d.key()

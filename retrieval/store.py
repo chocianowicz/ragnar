@@ -144,7 +144,7 @@ class QdrantStore:
     def _point_id(chunk: Chunk) -> str:
         # Deterministic: re-upserting the same chunk overwrites rather than
         # duplicating.
-        return str(uuid.uuid5(NAMESPACE, f"{chunk.doc_id}:{chunk.chunk_index}"))
+        return str(uuid.uuid5(NAMESPACE, chunk.key()))
 
     @staticmethod
     def _vector_payload(chunk: Chunk, dense: list[float], hybrid: bool):

@@ -21,6 +21,15 @@ class Chunk:
     low_confidence: bool = False
     is_summary: bool = False
 
+    def key(self) -> str:
+        """Identity of this chunk within the corpus.
+
+        The store derives its point id from this, and the agentic layer
+        deduplicates on it. One definition, so those two can never
+        disagree about what "the same chunk" means.
+        """
+        return f"{self.doc_id}:{self.chunk_index}"
+
     def citation_label(self) -> str:
         if self.page is not None:
             return f"{self.filename}, p. {self.page}"

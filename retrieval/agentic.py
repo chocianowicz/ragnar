@@ -179,7 +179,7 @@ class AgenticSearch:
         for query in queries:
             for result in self._search.retrieve(query, doc_ids=doc_ids,
                                                 limit=limit):
-                key = f"{result.chunk.doc_id}:{result.chunk.chunk_index}"
+                key = result.chunk.key()
                 current = best.get(key)
                 if current is None or result.score > current.score:
                     best[key] = result
@@ -225,7 +225,7 @@ class AgenticSearch:
                                           limit=limit))
         deduped: dict[str, SearchResult] = {}
         for result in pool:
-            key = f"{result.chunk.doc_id}:{result.chunk.chunk_index}"
+            key = result.chunk.key()
             if key not in deduped or result.score > deduped[key].score:
                 deduped[key] = result
         cap = limit if limit is not None else self._search.candidates
