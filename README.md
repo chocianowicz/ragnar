@@ -31,9 +31,10 @@ page to check it against — or an admission that it isn't there.
 You drag a PDF into the sidebar and ask a question. In between, RAGnar:
 
 1. **Parses the file** with Docling, keeping page and sheet provenance. OCR stays off
-   by default and only kicks in when a page yields fewer than 50 characters — a
+   by default; if a document averages fewer than 50 characters per page, the whole
+   file is re-parsed with OCR and every chunk from it is marked low-confidence — a
    scanned document still works, without making every native-text PDF pay for it.
-2. **Chunks it structurally** — grouped by heading, never split across a page
+2. **Chunks it structurally** — grouped by page and size, never split across a page
    boundary. Tables are chunked by row group with the header row repeated in each
    one, so no chunk is a headerless fragment nobody can read.
 3. **Embeds and stores** — BGE-M3 vectors in Qdrant, each paired with a lexical
@@ -249,8 +250,6 @@ Environment (`.env`):
 
 Tracked rather than glossed over:
 
-- **Excel is designed for but under-tested.** Citations carry a sheet field and tables
-  get their own chunking, but no `.xlsx` fixture exists in the test suite yet.
 - **The similarity floor is hand-tuned**, not calibrated — see `eval/README.md`. It
   needs a much larger golden set before the number deserves trust.
 - **No recovery path if the vector store is lost.** Re-embedding from the converted
