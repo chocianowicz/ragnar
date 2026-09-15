@@ -34,13 +34,29 @@ not enough to calibrate the similarity floor with real confidence. The
 design calls for 30-50 hand-written cases against the real corpus before
 this calibration should be trusted for production use.
 
-The current `retrieval.score_floor` (0.6, in `config.yaml`) was chosen by
+The current `retrieval.score_floor` (0.55, in `config.yaml`) was chosen by
 sweeping candidate floors with `--calibrate` and picking the lowest floor
 that reached the best observed refusal_accuracy without lowering
 citation_accuracy. With only 5 cases this is a crude signal — it separates
 the two out-of-corpus questions from the three in-corpus ones cleanly at
 this floor, but a single mis-scored case would shift the whole picture.
 Treat it as a starting point, not a validated production threshold.
+
+Two reasons to trust it even less than that paragraph suggests:
+
+- **The sweep could not have produced 0.55.** It stepped by 0.1, so the
+  grid ran 0.5, 0.6, 0.7 — the shipped value was never on it. The default
+  is now `0.40:0.80:0.05`, overridable with `--floors start:stop:step`.
+- **`sample.pdf` is not in the indexed collection.** The harness searches
+  whatever is live, so the three in-corpus cases were scored against a
+  corpus that cannot contain their answers, and every number in the run
+  was meaningless. `run_eval.py` now refuses to score in that state and
+  names the missing sources. Use `--golden` to keep a real-corpus set
+  alongside the fixture one.
+
+So the honest status of `score_floor` is: hand-set from live observation,
+never validated by this harness. Growing the golden set is what changes
+that.
 
 Ragas integration (judged metrics requiring an external LLM judge) is not
 yet implemented — the isolation boundary above is designed to support it
