@@ -61,6 +61,7 @@ def build_services():
         "cfg": cfg, "storage": storage, "registry": registry, "chats": chats,
         "store": store, "pipeline": pipeline, "search": search,
         "agentic": agentic, "answerer": Answerer(llm), "worker": worker,
+        "llm": llm,
     }
 
 

@@ -78,6 +78,15 @@ def render(svc) -> dict:
                  "questions). Only applies when re-ranking is on.",
         )
 
+        follow_up = st.checkbox(
+            "Use the conversation for follow-up questions", value=True,
+            help="Resolves references before searching, so \"and the base "
+                 "year for that?\" searches for the thing you were "
+                 "discussing rather than the words you typed. Costs one "
+                 "model call per follow-up. The answer always sees the "
+                 "recent conversation regardless of this setting.",
+        )
+
         st.markdown("**Extra reasoning steps**")
         st.caption(
             "Each adds at least one model call before the answer starts. "
@@ -163,7 +172,7 @@ def render(svc) -> dict:
 
     return {"model": model, "temperature": temperature,
             "floor": floor, "candidates": candidates,
-            "use_reranker": use_reranker,
+            "use_reranker": use_reranker, "follow_up": follow_up,
             # Per request, never written back onto the shared service — two
             # people using the app must not change each other's settings.
             "rewrite": rewrite, "multi_query": multi_query,

@@ -9,6 +9,7 @@ from generation.answerer import (
     AnswerMode, classify, NO_RESULTS_MESSAGE, citation_labels,
     build_citations,
 )
+from generation import followup
 from history.chat_store import chat_title
 from ui.services import build_services
 from ui import sources
@@ -231,6 +232,12 @@ def render_trace(trace, key: str) -> None:
         if seconds:
             st.caption("  ".join(f"{k} {v:.1f}s" for k, v in seconds.items()))
 
+        if trace.get("resolved_question"):
+            st.caption("Searched for the follow-up as:")
+            # st.text: this is model output and must not be able to inject
+            # markup into the page.
+            st.text(trace["resolved_question"])
+
         agentic = trace.get("agentic")
         if agentic:
             st.divider()
@@ -277,15 +284,25 @@ if question := st.chat_input("Ask about your documents"):
         st.markdown(question)
 
     with st.chat_message("assistant"):
+        # Everything before this question. The model sees a window of it,
+        # and the follow-up is resolved against it before searching.
+        history = st.session_state.messages[:-1]
+
         # Retrieval alone runs to tens of seconds locally. Narrate it, so
         # the wait is legible instead of a bare spinner.
         with st.status("Searching your documents", expanded=True) as status:
             step = lambda label: status.update(label=label)
+
+            search_question, resolved = question, False
+            if history and query["follow_up"]:
+                step("Working out what the question refers to")
+                search_question, resolved = followup.resolve(
+                    svc["llm"], question, history, model=query["model"])
             extras = any((query["rewrite"], query["multi_query"],
                           query["multi_hop"], query["self_correct"]))
             if extras:
                 outcome, agentic = svc["agentic"].find(
-                    question, doc_ids=doc_ids_filter,
+                    search_question, doc_ids=doc_ids_filter,
                     score_floor=query["floor"],
                     candidates=query["candidates"],
                     use_reranker=query["use_reranker"],
@@ -297,7 +314,7 @@ if question := st.chat_input("Ask about your documents"):
                 )
             else:
                 outcome = svc["search"].find(
-                    question, doc_ids=doc_ids_filter,
+                    search_question, doc_ids=doc_ids_filter,
                     score_floor=query["floor"],
                     candidates=query["candidates"],
                     use_reranker=query["use_reranker"], on_step=step,
@@ -315,6 +332,7 @@ if question := st.chat_input("Ask about your documents"):
             "best_score": outcome.trace.best_score,
             "hybrid": outcome.trace.hybrid,
             "seconds": outcome.trace.seconds,
+            "resolved_question": search_question if resolved else None,
         }
         if agentic is not None:
             trace["agentic"] = {
@@ -346,6 +364,7 @@ if question := st.chat_input("Ask about your documents"):
             text = st.write_stream(svc["answerer"].stream(
                 question, outcome.results,
                 model=query["model"], temperature=query["temperature"],
+                history=history,
             ))
             st.caption("Sources")
             render_sources(citations)

@@ -9,6 +9,30 @@ NO_RESULTS_MESSAGE = (
     "I could not find anything relevant in the indexed documents."
 )
 
+# How many prior messages are replayed to the model. Six is three
+# exchanges, which covers the follow-up chains people actually write
+# ("...and the base year?", "...what about Iceland?") without letting the
+# prompt grow without bound as a conversation goes on. Anything older is
+# dropped rather than summarised: summarising costs a model call on every
+# turn, and the question sent to retrieval is already resolved against
+# history before it gets here (see generation/followup.py).
+HISTORY_TURNS = 6
+
+
+def recent_history(history: list[dict] | None) -> list[dict]:
+    """The last few turns, reduced to what a chat model accepts.
+
+    Messages carry citations and a retrieval trace for the UI; sending
+    those to the model would be noise at best. Only role and content go.
+    """
+    if not history:
+        return []
+    return [
+        {"role": m["role"], "content": str(m.get("content", ""))}
+        for m in history[-HISTORY_TURNS:]
+        if m.get("role") in ("user", "assistant") and m.get("content")
+    ]
+
 
 def citation_labels(results: list[SearchResult]) -> list[str]:
     """Deduplicated citation labels from search results, first-seen order.
@@ -97,7 +121,8 @@ class Answerer:
 
     def answer(self, question: str, results: list[SearchResult], *,
                model: str | None = None,
-               temperature: float | None = None) -> Answer:
+               temperature: float | None = None,
+               history: list[dict] | None = None) -> Answer:
         if not results:
             # Skip the model entirely — a refusal it cannot embellish.
             return Answer(text=NO_RESULTS_MESSAGE, refused=True)
@@ -105,12 +130,14 @@ class Answerer:
         text = self._llm.generate(
             SYSTEM_PROMPT, build_user_prompt(question, build_excerpts(results)),
             model=model, temperature=temperature,
+            history=recent_history(history),
         )
 
         return Answer(text=text, citations=citation_labels(results))
 
     def stream(self, question: str, results: list[SearchResult], *,
-               model: str | None = None, temperature: float | None = None):
+               model: str | None = None, temperature: float | None = None,
+               history: list[dict] | None = None):
         """Yield answer-text deltas for the UI's st.write_stream.
 
         Citations are not part of the stream — they come from
@@ -121,4 +148,5 @@ class Answerer:
         yield from self._llm.stream(
             SYSTEM_PROMPT, build_user_prompt(question, build_excerpts(results)),
             model=model, temperature=temperature,
+            history=recent_history(history),
         )

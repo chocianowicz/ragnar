@@ -10,15 +10,20 @@ class StubLLM:
         self.reply = reply
         self.prompts = []
         self.opts = []
+        self.histories = []
 
-    def generate(self, system, user, *, model=None, temperature=None):
+    def generate(self, system, user, *, model=None, temperature=None,
+                 history=None):
         self.prompts.append((system, user))
         self.opts.append((model, temperature))
+        self.histories.append(history)
         return self.reply
 
-    def stream(self, system, user, *, model=None, temperature=None):
+    def stream(self, system, user, *, model=None, temperature=None,
+               history=None):
         self.prompts.append((system, user))
         self.opts.append((model, temperature))
+        self.histories.append(history)
         yield self.reply
 
 
@@ -191,3 +196,44 @@ def test_build_citations_deduplicates_by_label():
     # first-seen wins, matching citation_labels; results arrive sorted so
     # that is also the best-scoring one here
     assert citations[0]["text"] == "passage 0"
+
+
+def test_conversation_history_reaches_the_model():
+    """Without this, a follow-up like "and the base year?" is answered with
+    no idea what it refers to."""
+    llm = StubLLM()
+    history = [
+        {"role": "user", "content": "What is Norway's target?"},
+        {"role": "assistant", "content": "70-75% below 1990.",
+         "citations": [{"label": "x"}]},
+    ]
+
+    Answerer(llm).answer("And the base year?",
+                         [_result("f.pdf", 1, "text")], history=history)
+
+    assert llm.histories[0] == [
+        {"role": "user", "content": "What is Norway's target?"},
+        {"role": "assistant", "content": "70-75% below 1990."},
+    ]
+
+
+def test_streaming_also_carries_history():
+    llm = StubLLM()
+    history = [{"role": "user", "content": "earlier question"}]
+
+    list(Answerer(llm).stream("follow up", [_result("f.pdf", 1, "t")],
+                              history=history))
+
+    assert llm.histories[0] == [{"role": "user", "content": "earlier question"}]
+
+
+def test_a_refusal_still_never_calls_the_model():
+    """History must not create a path where an empty result set reaches the
+    model anyway."""
+    llm = StubLLM()
+
+    answer = Answerer(llm).answer("q", [], history=[
+        {"role": "user", "content": "earlier"}])
+
+    assert answer.refused
+    assert llm.prompts == []
