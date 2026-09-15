@@ -1000,64 +1000,29 @@ and the reader page in ui/reader.py."
 
 ---
 
-### Task 8: Redraw only the answer, not the whole page
+### Task 8: Redraw only the answer — ATTEMPTED AND REVERTED
 
-`time.sleep(1); st.rerun()` at the bottom re-renders everything once a second while any answer runs. A fragment redraws just the answer area — the mechanism the ingest status strip already uses.
+The intent: replace `time.sleep(1); st.rerun()` at the bottom of `ui/app.py`
+with `@st.fragment(run_every="1s")` around the answer area, so a streaming
+answer redraws one block instead of the whole page.
 
-**Files:**
-- Modify: `ui/app.py`
+**It was implemented and reverted.** `st.fragment(run_every=…)` does not
+auto-rerun under `streamlit.testing.v1.AppTest`: the fragment executes once
+inline, the job is still running, and nothing polls again. The module-level
+`st.rerun()` is what made AppTest loop until the answer finished. With the
+fragment in place the end-to-end check came back with the *user* turn as the
+last message — the answer never committed.
 
-- [ ] **Step 1: Implement**
+That is an AppTest limitation rather than a browser bug, but the trade is
+bad either way: this phase and Phase 0 both caught real regressions with
+exactly that end-to-end check (a missing import that the whole unit suite
+passed, and a chat-switch bug). Losing the ability to drive an answer to
+completion in a test costs more than a once-a-second full redraw of a
+single-user local app.
 
-Replace the live-answer block and the trailing poll with a fragment:
-
-```python
-@st.fragment(run_every="1s")
-def live_answer() -> None:
-    """Redraw the in-flight answer, and only that.
-
-    The previous version re-ran the whole script every second — sidebar,
-    transcript and all — to update one block of text.
-    """
-    active = jobs.get(st.session_state.current_chat_id or "")
-    if active is None:
-        return
-    with st.chat_message("assistant"):
-        ...   # body moved from the current block
-    if active.done:
-        commit(active)
-        jobs.pop(active.chat_id)
-        st.rerun(scope="app")
-
-
-live_answer()
-```
-
-Keep `reap_finished_jobs()` where it is: a job finishing in *another* chat must still be filed, and this fragment only watches the current one.
-
-- [ ] **Step 2: Verify an answer still streams and commits**
-
-```bash
-$RUN python -c "
-from streamlit.testing.v1 import AppTest
-at = AppTest.from_file('ui/app.py', default_timeout=900); at.run()
-at.chat_input[0].set_value(\"What is Norway's emission reduction target for 2035?\").run()
-m = at.session_state['messages'][-1]
-print('role:', m['role'], '| answer:', m['content'][:70])
-print('citations:', len(m['citations']))"
-```
-Expected: an assistant message with the 70–75% answer and 5 citations.
-
-- [ ] **Step 3: Full suite and commit**
-
-Run: `$RUN python -m pytest tests -q 2>&1 | tail -1` → `302 passed, 25 skipped`.
-
-```bash
-git add ui/app.py
-git commit -m "perf: redraw only the in-flight answer while it streams"
-```
-
----
+Revisit only with a way to verify an answer end to end that does not depend
+on the module-level rerun — e.g. driving a real browser session, or an
+explicit "run until the job finishes" helper the test can call.
 
 ### Task 9: First tests for the index rebuild
 
