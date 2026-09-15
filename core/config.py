@@ -53,5 +53,15 @@ class Config:
         return self._raw["retrieval"]["score_floor"]
 
     @property
+    def embedding_batch(self) -> int:
+        """Texts per /api/embed request during ingestion."""
+        return self._raw["models"].get("embedding_batch", 64)
+
+    @property
+    def upsert_batch(self) -> int:
+        """Points per Qdrant upsert request during ingestion."""
+        return self._raw["storage"].get("upsert_batch", 128)
+
+    @property
     def chunking(self) -> dict:
         return self._raw["chunking"]

@@ -1,3 +1,4 @@
+import os
 import pytest
 import uuid
 from core.models import Chunk
@@ -72,6 +73,44 @@ def test_search_with_empty_doc_ids_returns_nothing_without_erroring(store):
     results = store.search([0.1] * 1024, limit=10, doc_ids=[])
 
     assert results == []
+
+
+@pytest.mark.integration
+def test_upsert_splits_large_batches(store):
+    chunks = [_chunk("d1", f"chunk {i}", index=i) for i in range(10)]
+    store.upsert_batch = 3
+    store.upsert(chunks, [[0.1] * 1024] * 10)
+
+    assert len(store.search([0.1] * 1024, limit=50)) == 10
+
+
+@pytest.mark.integration
+def test_ensure_collection_rejects_a_dimension_mismatch(store):
+    """Changing models.embedding without re-indexing used to surface as an
+    opaque upsert error on whichever document was next through the door."""
+    mismatched = QdrantStore(os.environ["QDRANT_URL"], store.collection,
+                             dim=512)
+
+    with pytest.raises(ValueError, match="re-index"):
+        mismatched.ensure_collection()
+
+
+@pytest.mark.integration
+def test_ensure_collection_is_idempotent(store):
+    """It runs on every app start, and now also creates the payload index."""
+    store.ensure_collection()
+    store.ensure_collection()
+
+    store.upsert([_chunk("d1", "hello")], [[0.1] * 1024])
+    assert len(store.search([0.1] * 1024, limit=5, doc_ids=["d1"])) == 1
+
+
+def test_upsert_rejects_mismatched_chunk_and_vector_counts():
+    store = QdrantStore("http://unused", "c", client=object())
+
+    with pytest.raises(ValueError, match="2 chunks but 1 vectors"):
+        store.upsert([_chunk("d1", "a"), _chunk("d1", "b", index=1)],
+                     [[0.1] * 1024])
 
 
 @pytest.mark.integration

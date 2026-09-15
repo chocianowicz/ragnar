@@ -30,8 +30,10 @@ def build_services():
     registry = Registry(cfg.data_dir / "registry.db")
     chats = ChatStore(cfg.data_dir / "chats.db")
 
-    embedder = OllamaEmbedder(cfg.ollama_url, cfg.embedding_model)
-    store = QdrantStore(cfg.qdrant_url, cfg.collection, cfg.embedding_dim)
+    embedder = OllamaEmbedder(cfg.ollama_url, cfg.embedding_model,
+                              batch_size=cfg.embedding_batch)
+    store = QdrantStore(cfg.qdrant_url, cfg.collection, cfg.embedding_dim,
+                        upsert_batch=cfg.upsert_batch)
     store.ensure_collection()
     llm = OllamaLLM(cfg.ollama_url, cfg.llm_model)
 
