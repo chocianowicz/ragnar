@@ -76,7 +76,7 @@ if "doc" in st.query_params:
                          st.query_params.get("page"))
     st.stop()
 
-SIDEBAR_HEADER_CSS = """
+APP_CSS = """
 <style>
 [class*="st-key-remove_container_"] button:hover,
 [class*="st-key-del_chat_container_"] button:hover {
@@ -84,17 +84,46 @@ SIDEBAR_HEADER_CSS = """
     color: white !important;
     border-color: #ff4b4b !important;
 }
-/* Make the Settings/Documents/Chats expander labels read like st.header */
-div[data-testid="stExpander"] summary p {
+/* Make the Settings/Documents/Chats expander labels read like st.header.
+   Scoped to the sidebar: the chat also uses expanders now, for citations
+   and the retrieval trace, and those are asides rather than headings. */
+section[data-testid="stSidebar"] div[data-testid="stExpander"] summary p {
     font-size: 1.5rem !important;
     font-weight: 600 !important;
+}
+
+/* The retrieval trace is supporting detail, not part of the answer.
+   Smaller and dimmed so the eye separates the two without having to read
+   them. Opacity rather than a fixed grey, so it holds in both themes. */
+[class*="st-key-trace_"] {
+    opacity: 0.7;
+}
+[class*="st-key-trace_"] p,
+[class*="st-key-trace_"] li,
+[class*="st-key-trace_"] pre,
+[class*="st-key-trace_"] code,
+[class*="st-key-trace_"] div[data-testid="stMarkdownContainer"] {
+    font-size: 0.8rem !important;
+    line-height: 1.5 !important;
+}
+/* st.caption is already small; keep it a touch smaller still so the two
+   levels inside the trace stay distinguishable. */
+[class*="st-key-trace_"] div[data-testid="stCaptionContainer"] p {
+    font-size: 0.74rem !important;
+}
+/* The trace's own summary line sits between the two: clearly a label,
+   clearly not a heading. */
+[class*="st-key-tracewrap_"] div[data-testid="stExpander"] summary p {
+    font-size: 0.82rem !important;
+    font-weight: 500 !important;
+    opacity: 0.8;
 }
 </style>
 """
 
 with st.sidebar:
     st.title("RAGnar - local RAG chat app")
-    st.markdown(SIDEBAR_HEADER_CSS, unsafe_allow_html=True)
+    st.markdown(APP_CSS, unsafe_allow_html=True)
 
     query = settings.render(svc)
     documents.render(svc)
@@ -171,13 +200,20 @@ def render_sources(citations: list) -> None:
                                    help="What the page number indexes")
 
 
-def render_trace(trace) -> None:
+def render_trace(trace, key: str) -> None:
     """How the answer was found — shown because a local question takes tens
     of seconds, and because a refusal is only actionable if you can see
-    whether nothing matched or everything scored just under the floor."""
+    whether nothing matched or everything scored just under the floor.
+
+    Wrapped in keyed containers so CSS can render the whole thing smaller
+    and dimmed: it is supporting detail, and should not compete with the
+    answer for attention.
+    """
     if trace is None:
         return
-    with st.expander("How this answer was found"):
+    with st.container(key=f"tracewrap_{key}"), \
+            st.expander("How this answer was found"), \
+            st.container(key=f"trace_{key}"):
         bits = [
             f"**{trace.get('candidates', 0)}** passages retrieved"
             + (" by meaning and wording" if trace.get("hybrid") else ""),
@@ -227,13 +263,13 @@ if "messages" not in st.session_state:
 # None until the current conversation has been saved for the first time.
 st.session_state.setdefault("current_chat_id", None)
 
-for message in st.session_state.messages:
+for turn, message in enumerate(st.session_state.messages):
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
         if message.get("citations"):
             st.caption("Sources")
             render_sources(message["citations"])
-        render_trace(message.get("trace"))
+        render_trace(message.get("trace"), key=f"h{turn}")
 
 if question := st.chat_input("Ask about your documents"):
     st.session_state.messages.append({"role": "user", "content": question})
@@ -314,7 +350,7 @@ if question := st.chat_input("Ask about your documents"):
             st.caption("Sources")
             render_sources(citations)
 
-        render_trace(trace)
+        render_trace(trace, key="live")
 
     st.session_state.messages.append(
         {"role": "assistant", "content": text, "citations": citations,
