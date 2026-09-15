@@ -210,6 +210,16 @@ def render_sources(citations: list) -> None:
     Citations saved before this existed are plain strings; render those as
     the captions they used to be rather than dropping older conversations.
     """
+    flagged = [c for c in citations
+               if isinstance(c, dict) and c.get("flags")]
+    if flagged:
+        st.warning(
+            f"{len(flagged)} of the sources below contain text that reads "
+            "as instructions to an AI rather than to a reader. The model "
+            "may have followed it. Check the flagged passage before "
+            "relying on this answer."
+        )
+
     for citation in citations:
         if not isinstance(citation, dict):
             st.caption(str(citation))
@@ -225,6 +235,11 @@ def render_sources(citations: list) -> None:
                 f"> {citation.get('text', '').strip()[:1500]}"
                 .replace("\n", "\n> ")
             )
+            for snippet in citation.get("flags") or []:
+                # st.text, never markdown: this is document text and must
+                # not be able to render markup.
+                st.error("Instruction-like text in this passage:", icon="⚠️")
+                st.text(snippet)
             doc_id = citation.get("doc_id")
             if doc_id:
                 # Links, not buttons: st.link_button opens a new tab, so

@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from core.models import SearchResult
+from generation import injection
 from generation.guards import should_refuse_aggregation
 from generation.prompts import SYSTEM_PROMPT, build_user_prompt, NO_ANSWER
 
@@ -94,6 +95,9 @@ def build_citations(results: list[SearchResult]) -> list[dict]:
             "chunk_index": chunk.chunk_index,
             "score": round(float(result.score), 4),
             "text": chunk.text,
+            # Instruction-shaped text in the passage, if any. Empty for
+            # almost every citation; when it is not, the UI says so.
+            "flags": injection.flag(chunk.text),
         })
     return citations
 
