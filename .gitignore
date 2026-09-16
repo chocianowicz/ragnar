@@ -23,3 +23,7 @@ eval/reports/
 # Hard links to data/originals, published so citations can open the real
 # file in the browser. Rebuilt on demand; never source.
 ui/static/
+
+# Admin settings tuned on a running instance, layered over config.yaml.
+# Deployment state, not source.
+data/settings.json

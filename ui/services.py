@@ -18,6 +18,7 @@ from ingestion.storage import Storage
 from ingestion.registry_db import Registry
 from ingestion.worker import IngestWorker
 from history.chat_store import ChatStore
+from ui.preferences import Preferences
 from retrieval.embedder import OllamaEmbedder
 from retrieval.store import QdrantStore
 from retrieval.search import Search
@@ -85,6 +86,9 @@ def build_services():
         "cfg": cfg, "storage": storage, "registry": registry, "chats": chats,
         "store": store, "pipeline": pipeline, "search": search,
         "agentic": agentic, "answerer": Answerer(llm), "worker": worker,
+        # Admin tuning, layered over config.yaml and kept with the
+        # instance's data rather than in the repo.
+        "prefs": Preferences(cfg.data_dir / "settings.json"),
         "llm": llm,
     }
 
@@ -102,6 +106,20 @@ def list_chat_models(ollama_url: str, exclude: str) -> list[str]:
             m["name"] for m in resp.json().get("models", [])
             if not m["name"].startswith(base)
         )
+    except Exception:
+        return []
+
+
+def list_loaded_models(ollama_url: str) -> list[str]:
+    """Models Ollama currently holds in memory, via /api/ps.
+
+    Not cached: the whole point is a live view of what is resident, which
+    is the first thing to check when a question is unexpectedly slow.
+    """
+    try:
+        resp = httpx.get(f"{ollama_url}/api/ps", timeout=5)
+        resp.raise_for_status()
+        return [m["name"] for m in resp.json().get("models", [])]
     except Exception:
         return []
 
