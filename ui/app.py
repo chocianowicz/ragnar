@@ -204,11 +204,6 @@ if active is not None:
         partial = active.text
         if partial:
             st.markdown(partial)
-        related = active.trace.get("related") or []
-        if related and not active.citations:
-            with st.expander("Related documents you might check"):
-                for label in related:
-                    st.caption(label)
         if active.done:
             commit(active)
             jobs.pop(active.chat_id)

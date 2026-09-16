@@ -257,7 +257,9 @@ def test_a_declined_answer_carries_no_citations():
 
     assert answer.refused
     assert answer.citations == []
-    assert answer.text == NO_RESULTS_MESSAGE
+    # The refusal opens with the standard sentence; what follows names the
+    # passages that were read and found wanting (see tests/test_near_miss.py).
+    assert answer.text.startswith(NO_RESULTS_MESSAGE)
 
 
 def test_a_declined_answer_does_not_leak_the_sentinel():

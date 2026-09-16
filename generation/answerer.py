@@ -6,9 +6,79 @@ from generation import injection
 from generation.guards import should_refuse_aggregation
 from generation.prompts import SYSTEM_PROMPT, build_user_prompt, NO_ANSWER
 
+# The opening sentence of every refusal. "Nothing relevant" would
+# contradict the near-miss sentence that can follow it — retrieval often
+# does find relevant material that simply does not answer the question.
 NO_RESULTS_MESSAGE = (
-    "I could not find anything relevant in the indexed documents."
+    "I could not find an answer to this in the indexed documents."
 )
+
+# How many of the closest documents a refusal names. Three is enough to
+# say "the corpus covers this area, just not your question" and few enough
+# that the refusal still reads as a refusal rather than a results page.
+NEAR_MISS_LIMIT = 3
+
+# Reranker scores are sigmoid(logit) (retrieval/reranker.py), so 0.5 is the
+# point where the cross-encoder has no opinion either way. Measured on the
+# real corpus, a question with no bearing on it at all pegs its entire
+# candidate list within 0.0002 of that midpoint, while a genuine near miss
+# reaches 0.503-0.578. Requiring real positive signal keeps the refusal
+# from manufacturing a connection the reranker did not find — which would
+# be worse than saying nothing, because the user goes and reads the
+# documents it named. The threshold is a property of the model's output
+# scale, not of the configured floor, so it survives recalibration.
+NEAR_MISS_MIN = 0.51
+
+
+def _closest_labels(candidates: list[SearchResult]) -> list[str]:
+    """One citation label per document, best-scoring page, best first."""
+    best: dict[str, SearchResult] = {}
+    for result in candidates:
+        if result.score < NEAR_MISS_MIN:
+            continue
+        seen = best.get(result.chunk.filename)
+        if seen is None or result.score > seen.score:
+            best[result.chunk.filename] = result
+    ranked = sorted(best.values(), key=lambda r: r.score, reverse=True)
+    return [r.chunk.citation_label() for r in ranked[:NEAR_MISS_LIMIT]]
+
+
+def _join(labels: list[str]) -> str:
+    if len(labels) == 1:
+        return labels[0]
+    return ", ".join(labels[:-1]) + " and " + labels[-1]
+
+
+def no_results_message(candidates: list[SearchResult], *,
+                       model_declined: bool = False) -> str:
+    """The refusal, naming the documents that came closest.
+
+    A bare "nothing relevant" is wrong whenever retrieval found coherent
+    material that was simply about something else — on the real corpus a
+    question about one member state's target returns the bloc-wide target,
+    which is topical and silent on the country. Read as "nothing relevant",
+    that looks like a broken index rather than an honest gap.
+
+    Only filenames and page numbers are used. Naming a document cannot be
+    mistaken for an answer, whereas quoting one would be an answer that
+    never cleared the floor. Nothing here calls the model, so a refusal
+    stays deterministic — the property the floor exists to provide.
+
+    `model_declined` distinguishes the two refusals, which fail at
+    different stages and must not describe each other: below the floor
+    nothing was close enough to read, while a declined answer means the
+    model read passages that cleared the floor and found no answer in them.
+    """
+    labels = _closest_labels(candidates)
+    if not labels:
+        return NO_RESULTS_MESSAGE
+    listed = _join(labels)
+    if model_declined:
+        return (f"{NO_RESULTS_MESSAGE} The closest passages were in "
+                f"{listed}, but they do not answer it.")
+    return (f"{NO_RESULTS_MESSAGE} The closest passages were in {listed}, "
+            f"but none matched closely enough to answer from.")
+
 
 # How many prior messages are replayed to the model. Six is three
 # exchanges, which covers the follow-up chains people actually write
@@ -163,7 +233,9 @@ class Answerer:
             # No citations: nothing here was answered from them. This also
             # keeps the eval harness honest, which would otherwise score a
             # declined answer as a successful one.
-            return Answer(text=NO_RESULTS_MESSAGE, refused=True)
+            return Answer(
+                text=no_results_message(results, model_declined=True),
+                refused=True)
 
         return Answer(text=text, citations=citation_labels(results))
 

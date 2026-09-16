@@ -208,9 +208,13 @@ points, not a golden set. Lower it and refusals turn into confident guesses.
   of the question — a Polish question against an English contract is answered in Polish.
 - **Sources**, an expander listing every chunk that fed the answer:
   `contract.pdf, p. 12` · `budget.xlsx, sheet 2025` · `notes.docx`
-- **Or a refusal.** "I could not find anything relevant in the indexed documents,"
-  followed by *Related documents you might check* — the near-misses, so a bad question
-  still points somewhere useful.
+- **Or a refusal.** "I could not find an answer to this in the indexed documents,"
+  followed — when retrieval did find related material — by the documents that came
+  closest: *"The closest passages were in contract.pdf, p. 12 and policy.pdf, p. 4,
+  but none matched closely enough to answer from."* That distinguishes "the corpus is
+  silent on this" from "the corpus covers this area but not your question", and it
+  names documents only, never quoting them. A question with no bearing on the corpus
+  at all gets the bare sentence, so the refusal never invents a connection.
 
 ---
 

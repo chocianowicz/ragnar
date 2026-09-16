@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from generation import followup
 from generation.answerer import (
     AnswerMode, build_citations, citation_labels, classify, declined,
-    NO_RESULTS_MESSAGE,
+    no_results_message,
 )
 from generation.guards import aggregation_refusal
 from generation.prompts import NO_ANSWER
@@ -84,7 +84,11 @@ def answer(job, question: str, *, history: list[dict],
         job.trace["agentic"] = agentic_trace.as_dict()
 
     if mode is AnswerMode.NO_RESULTS:
-        job.append(NO_RESULTS_MESSAGE)
+        # outcome.related is what retrieval found and the floor rejected.
+        # Naming those documents is the difference between "the index is
+        # empty on this" and "the index covers this area but not your
+        # question" — which is what the user needs to know next.
+        job.append(no_results_message(outcome.related))
         job.trace["related"] = citation_labels(outcome.related)
         return
     if mode is AnswerMode.AGGREGATION_REFUSED:
@@ -119,7 +123,7 @@ def answer(job, question: str, *, history: list[dict],
         # so no sources: they did not produce this.
         job.chunks.clear()
         job.citations = []
-        job.append(NO_RESULTS_MESSAGE)
+        job.append(no_results_message(outcome.results, model_declined=True))
         job.trace["model_declined"] = True
         job.trace["related"] = citation_labels(outcome.results)
     elif deciding:
