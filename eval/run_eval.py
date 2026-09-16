@@ -30,7 +30,8 @@ from retrieval.reranker import BGEReranker
 from retrieval.search import Search
 from generation.llm import OllamaLLM
 from generation import followup, injection
-from generation.answerer import Answerer, AnswerMode, classify
+from generation.answerer import (Answerer, AnswerMode, classify,
+                                 citation_labels)
 from eval.metrics import refusal_accuracy, citation_accuracy, normalise
 
 ROOT = Path(__file__).parent
@@ -105,9 +106,28 @@ def check_corpus(store: QdrantStore, golden: list[dict]) -> None:
         )
 
 
+def build_report(cases: list[dict], golden_path, retrieval_only: bool) -> dict:
+    """The summary written to stdout and to eval/reports/.
+
+    `retrieval_only` is recorded rather than implied: both metrics are
+    derived from retrieval, so a run without the answer model produces
+    real numbers — and someone reading the report later has to be able to
+    tell that the answers themselves were never generated.
+    """
+    return {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "n_cases": len(cases),
+        "golden_set": str(golden_path or "eval/golden_set.yaml"),
+        "retrieval_only": bool(retrieval_only),
+        "refusal_accuracy": refusal_accuracy(cases),
+        "citation_accuracy": citation_accuracy(cases),
+    }
+
+
 def run_cases(score_floor: float | None = None,
               golden_path: Path | None = None,
-              verify_corpus: bool = True) -> list[dict]:
+              verify_corpus: bool = True,
+              retrieval_only: bool = False) -> list[dict]:
     cfg = Config()
     floor = cfg.score_floor if score_floor is None else score_floor
 
@@ -140,6 +160,13 @@ def run_cases(score_floor: float | None = None,
 
             if mode is not AnswerMode.ANSWER:
                 answer_text, citations, refused = "", [], True
+            elif retrieval_only:
+                # Citations come from the retrieved chunks, never from the
+                # model, so they are already known. Skipping generation
+                # costs the answer text and nothing either metric reads.
+                answer_text = ""
+                citations = citation_labels(outcome.results)
+                refused = False
             else:
                 answer = answerer.answer(question, outcome.results,
                                          history=history)
@@ -184,7 +211,8 @@ DEFAULT_FLOORS = "0.40:0.80:0.05"
 
 
 def calibrate_floor(floors: list[float],
-                    golden_path: Path | None = None) -> None:
+                    golden_path: Path | None = None,
+                    retrieval_only: bool = False) -> None:
     """Sweep candidate floors and report which separates the two groups best.
 
     The floor cannot be chosen in advance - it depends on the corpus. This
@@ -197,7 +225,8 @@ def calibrate_floor(floors: list[float],
     print(f"{'floor':>7} {'refusal_acc':>12} {'citation_acc':>13}  misses")
     for floor in floors:
         cases = run_cases(score_floor=floor, golden_path=golden_path,
-                          verify_corpus=floor == floors[0])
+                          verify_corpus=floor == floors[0],
+                          retrieval_only=retrieval_only)
         # Name what each floor gets wrong. A pair of aggregate numbers says
         # a floor is worse without saying which question it broke, which is
         # the thing you need in order to judge whether the trade is right.
@@ -216,6 +245,12 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--calibrate", action="store_true")
     parser.add_argument(
+        "--retrieval-only", action="store_true",
+        help="skip answer generation. Both metrics come from retrieval, so "
+             "this measures the same things without loading the answer "
+             "model — ~14 GB on the reference machine.",
+    )
+    parser.add_argument(
         "--golden", type=Path, default=None,
         help="golden set to run (default: eval/golden_set.yaml). Keeps a "
              "real-corpus set separate from the fixture one.",
@@ -227,17 +262,13 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.calibrate:
-        calibrate_floor(parse_floors(args.floors), golden_path=args.golden)
+        calibrate_floor(parse_floors(args.floors), golden_path=args.golden,
+                        retrieval_only=args.retrieval_only)
         return
 
-    cases = run_cases(golden_path=args.golden)
-    report = {
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "n_cases": len(cases),
-        "golden_set": str(args.golden or "eval/golden_set.yaml"),
-        "refusal_accuracy": refusal_accuracy(cases),
-        "citation_accuracy": citation_accuracy(cases),
-    }
+    cases = run_cases(golden_path=args.golden,
+                      retrieval_only=args.retrieval_only)
+    report = build_report(cases, args.golden, args.retrieval_only)
 
     print(json.dumps(report, indent=2, ensure_ascii=False))
 

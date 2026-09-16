@@ -132,3 +132,28 @@ def test_corpus_check_matches_across_unicode_normalisation():
                "expected_sources": ["NDC 3.0 México_spanish.pdf"]}]
 
     check_corpus(FakeStore(["NDC 3.0 México_spanish.pdf"]), golden)
+
+
+def test_retrieval_only_mode_is_declared_in_the_report():
+    """Refusal and citation accuracy both come from retrieval, so they can
+    be measured without the answer model — which on this hardware is 14 GB.
+    The report has to say which mode produced it, or a retrieval-only run
+    looks like a full one."""
+    from eval.run_eval import build_report
+
+    report = build_report([{"refused": True, "out_of_corpus": True,
+                            "citations": [], "expected_sources": []}],
+                          golden_path=None, retrieval_only=True)
+
+    assert report["retrieval_only"] is True
+    assert report["n_cases"] == 1
+
+
+def test_a_full_report_says_so_too():
+    from eval.run_eval import build_report
+
+    report = build_report([{"refused": True, "out_of_corpus": True,
+                            "citations": [], "expected_sources": []}],
+                          golden_path=None, retrieval_only=False)
+
+    assert report["retrieval_only"] is False
