@@ -229,6 +229,7 @@ points, not a golden set. Lower it and refusals turn into confident guesses.
 | `models.llm` | `qwen2.5:14b` | Answer generation, via Ollama |
 | `models.embedding` | `bge-m3` | 1024-dimensional vectors |
 | `models.reranker` | `BAAI/bge-reranker-v2-m3` | Cross-encoder, downloaded once |
+| `models.keep_alive` | `10m` | How long Ollama holds a model after the last call |
 | `chunking.target_tokens` | `500` | 50-token overlap |
 | `chunking.table_rows_per_group` | `20` | Header repeated per group |
 | `retrieval.hybrid` | `true` | Pair the dense vector with a lexical one |
@@ -261,6 +262,14 @@ why it is slow and why it catches integration breakage that mocks would hide.
 ---
 
 ## Requirements
+
+**Memory.** The answer model is the whole budget: `qwen2.5:14b` is about 14 GB
+resident once loaded, and the app keeps it loaded for `models.keep_alive` after
+the last question so a pause does not cost a cold reload. On a 32 GB machine
+that also runs Docker Desktop and Qdrant, that leaves little spare — running a
+long batch (the eval harness asks ~50 questions back to back) wants a quiet
+machine. Lower `keep_alive`, or choose a smaller answer model, if memory is
+tight.
 
 Docker Desktop, and [Ollama](https://ollama.com/) running natively on the host with
 `qwen2.5:14b` and `bge-m3` pulled. Apple Silicon is the tested configuration; the 14B

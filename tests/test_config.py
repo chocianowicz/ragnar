@@ -99,3 +99,12 @@ def test_batch_sizes_fall_back_to_defaults_when_absent(tmp_path):
 
     assert cfg.embedding_batch == 64
     assert cfg.upsert_batch == 128
+
+
+def test_keep_alive_defaults_and_is_settable(tmp_path):
+    """Holding a 14 GB model through idle time is a trade the deployment
+    should be able to make, not one baked into the code."""
+    assert Config(_write(tmp_path, VALID)).keep_alive == "10m"
+
+    raw = {**VALID, "models": {**VALID["models"], "keep_alive": "2m"}}
+    assert Config(_write(tmp_path, raw)).keep_alive == "2m"

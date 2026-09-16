@@ -120,3 +120,15 @@ def test_warm_loads_the_model_without_generating():
     assert body["model"] == "m"
     assert body["prompt"] == ""
     assert body["keep_alive"] == "10m"
+
+
+def test_keep_alive_can_be_switched_off():
+    """A 14B answer model is ~14 GB resident. On a machine that also runs
+    Docker, holding it through idle time is a real cost, so it has to be
+    possible to hand it back immediately."""
+    client = StubClient({"message": {"content": "ok"}})
+    llm = OllamaLLM("http://x", "m", client=client, keep_alive="0")
+
+    llm.generate("sys", "user")
+
+    assert client.calls[0]["keep_alive"] == "0"

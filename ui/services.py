@@ -35,11 +35,13 @@ def build_services():
     chats = ChatStore(cfg.data_dir / "chats.db")
 
     embedder = OllamaEmbedder(cfg.ollama_url, cfg.embedding_model,
-                              batch_size=cfg.embedding_batch)
+                              batch_size=cfg.embedding_batch,
+                              keep_alive=cfg.keep_alive)
     store = QdrantStore(cfg.qdrant_url, cfg.collection, cfg.embedding_dim,
                         upsert_batch=cfg.upsert_batch, hybrid=cfg.hybrid)
     store.ensure_collection()
-    llm = OllamaLLM(cfg.ollama_url, cfg.llm_model)
+    llm = OllamaLLM(cfg.ollama_url, cfg.llm_model,
+                    keep_alive=cfg.keep_alive)
 
     def _warm() -> None:
         # Best effort. Ollama may be starting, or the model may not be

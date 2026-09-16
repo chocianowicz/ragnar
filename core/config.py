@@ -124,6 +124,18 @@ class Config:
         return self._raw["models"].get("reranker_max_length", 512)
 
     @property
+    def keep_alive(self) -> str:
+        """How long Ollama holds a model after the last call.
+
+        The trade is memory against latency, and on this hardware it is
+        not small: qwen2.5:14b is about 14 GB resident, on a machine that
+        is also running Docker and Qdrant. "10m" keeps a conversation
+        fast; "0" hands the memory back immediately and pays a cold load
+        on the next question.
+        """
+        return str(self._raw["models"].get("keep_alive", "10m"))
+
+    @property
     def embedding_batch(self) -> int:
         """Texts per /api/embed request during ingestion."""
         return self._raw["models"].get("embedding_batch", 64)

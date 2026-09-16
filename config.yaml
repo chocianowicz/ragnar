@@ -10,6 +10,12 @@ models:
   # Texts per /api/embed request. Ingestion embeds a whole document at
   # once, so this is what keeps a large PDF from riding on one timeout.
   embedding_batch: 64
+  # How long Ollama holds a model after the last call. Memory against
+  # latency, and the memory is not small: qwen2.5:14b is ~14 GB resident,
+  # on a machine also running Docker and Qdrant. Lower it (or "0") on a
+  # constrained machine and pay a cold load on the first question after a
+  # pause; raise it if the machine has room to spare.
+  keep_alive: 10m
 
 chunking:
   strategy: structural   # fixed | structural
