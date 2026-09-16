@@ -42,7 +42,9 @@ def refusal_accuracy(cases: list[dict]) -> float:
 
 def citation_accuracy(cases: list[dict]) -> float:
     """Did the cited document match the expected source?"""
-    scored = [c for c in cases if not c["out_of_corpus"]]
+    # Cases that are supposed to end in a refusal name no sources, so
+    # scoring them here counted a correct refusal as a citation miss.
+    scored = [c for c in cases if not _should_refuse(c)]
     if not scored:
         return 0.0
 

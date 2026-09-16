@@ -157,3 +157,34 @@ def test_a_full_report_says_so_too():
                           golden_path=None, retrieval_only=False)
 
     assert report["retrieval_only"] is False
+
+
+def test_sweep_derives_each_floor_from_one_run():
+    """Retrieval and re-ranking are identical whatever the floor is — it
+    only decides which of the already-scored passages are kept. So a case
+    refuses exactly when its best score falls below the floor, and a sweep
+    needs one pass rather than one pass per floor."""
+    from eval.run_eval import sweep
+
+    cases = [{"question": "in corpus", "out_of_corpus": False,
+              "best_score": 0.72, "citations": ["a.pdf, p. 1"],
+              "expected_sources": ["a.pdf"]},
+             {"question": "absent", "out_of_corpus": True,
+              "best_score": 0.58, "citations": [], "expected_sources": []}]
+
+    rows = {floor: acc for floor, acc, _ in sweep(cases, [0.50, 0.60, 0.80])}
+
+    assert rows[0.50] == 0.5    # neither refuses; the absent one is wrong
+    assert rows[0.60] == 1.0    # separates them
+    assert rows[0.80] == 0.5    # both refuse; the in-corpus one is wrong
+
+
+def test_sweep_names_what_each_floor_gets_wrong():
+    from eval.run_eval import sweep
+
+    cases = [{"question": "absent thing", "out_of_corpus": True,
+              "best_score": 0.58, "citations": [], "expected_sources": []}]
+
+    [(floor, acc, missed)] = sweep(cases, [0.50])
+
+    assert missed == ["absent thing"]

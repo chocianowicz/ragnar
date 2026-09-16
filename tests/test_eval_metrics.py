@@ -78,3 +78,16 @@ def test_citation_accuracy_matches_across_unicode_normalisation():
               "expected_sources": ["NDC 3.0 México_spanish.pdf"]}]
 
     assert citation_accuracy(cases) == 1.0
+
+
+def test_citation_accuracy_ignores_cases_that_should_refuse():
+    """An aggregation case expects a refusal, so it names no sources.
+    Scoring it for citations counted a correct refusal as a citation miss."""
+    cases = [
+        {"out_of_corpus": False, "expect_refusal": True,
+         "citations": [], "expected_sources": []},
+        {"out_of_corpus": False, "citations": ["a.pdf, p. 1"],
+         "expected_sources": ["a.pdf"]},
+    ]
+
+    assert citation_accuracy(cases) == 1.0

@@ -32,7 +32,8 @@ from generation.llm import OllamaLLM
 from generation import followup, injection
 from generation.answerer import (Answerer, AnswerMode, classify,
                                  citation_labels)
-from eval.metrics import refusal_accuracy, citation_accuracy, normalise
+from eval.metrics import (refusal_accuracy, citation_accuracy, normalise,
+                          _should_refuse)
 
 ROOT = Path(__file__).parent
 
@@ -185,6 +186,9 @@ def run_cases(score_floor: float | None = None,
             "refused": refused,
             "contexts": [r.chunk.text for r in outcome.results],
             "flagged": case_flagged(outcome.results),
+            # What the floor is compared against. Recorded so a
+            # calibration sweep can be derived from this one run.
+            "best_score": outcome.trace.best_score,
         })
 
     return cases
@@ -210,6 +214,28 @@ def parse_floors(spec: str) -> list[float]:
 DEFAULT_FLOORS = "0.40:0.80:0.05"
 
 
+def sweep(cases: list[dict], floors: list[float]):
+    """(floor, refusal_accuracy, questions missed) for each candidate floor.
+
+    Derived from one run rather than re-running per floor. Retrieval and
+    re-ranking do not depend on the floor — it only decides which of the
+    already-scored passages survive — so a case refuses exactly when its
+    best score falls below it. Re-running the whole set nine times to
+    discover that would cost hours of re-ranking to learn nothing new.
+    """
+    rows = []
+    for floor in floors:
+        scored = []
+        for case in cases:
+            best = case.get("best_score")
+            refused = best is None or best < floor
+            scored.append({**case, "refused": refused})
+        missed = [c["question"] for c in scored
+                  if bool(c["refused"]) != _should_refuse(c)]
+        rows.append((floor, refusal_accuracy(scored), missed))
+    return rows
+
+
 def calibrate_floor(floors: list[float],
                     golden_path: Path | None = None,
                     retrieval_only: bool = False) -> None:
@@ -217,28 +243,21 @@ def calibrate_floor(floors: list[float],
 
     The floor cannot be chosen in advance - it depends on the corpus. This
     is what the out-of-corpus golden entries exist for.
-
-    The sweep used to step by 0.1, which could not produce the 0.55 the
-    config actually ships - the grid has to be fine enough to contain the
-    answer it is meant to find.
     """
-    print(f"{'floor':>7} {'refusal_acc':>12} {'citation_acc':>13}  misses")
-    for floor in floors:
-        cases = run_cases(score_floor=floor, golden_path=golden_path,
-                          verify_corpus=floor == floors[0],
-                          retrieval_only=retrieval_only)
-        # Name what each floor gets wrong. A pair of aggregate numbers says
-        # a floor is worse without saying which question it broke, which is
-        # the thing you need in order to judge whether the trade is right.
-        missed = [
-            c["question"] for c in cases
-            if bool(c["refused"]) != bool(c["out_of_corpus"])
-        ]
-        summary = "; ".join(q[:40] for q in missed[:3])
+    cases = run_cases(golden_path=golden_path, retrieval_only=retrieval_only)
+
+    print(f"{'floor':>7} {'refusal_acc':>12}  misses")
+    for floor, accuracy, missed in sweep(cases, floors):
+        summary = "; ".join(q[:38] for q in missed[:3])
         if len(missed) > 3:
             summary += f" (+{len(missed) - 3} more)"
-        print(f"{floor:>7.2f} {refusal_accuracy(cases):>12.2f} "
-              f"{citation_accuracy(cases):>13.2f}  {summary}")
+        print(f"{floor:>7.2f} {accuracy:>12.2f}  {summary}")
+
+    best = max(sweep(cases, floors), key=lambda row: row[1])
+    print(f"\nBest separation at floor {best[0]:.2f} "
+          f"(refusal accuracy {best[1]:.2f}, {len(best[2])} wrong of {len(cases)})")
+    print("Citation accuracy is unaffected by the floor; it was "
+          f"{citation_accuracy(cases):.2f} on this run.")
 
 
 def main() -> None:
