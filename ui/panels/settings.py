@@ -2,10 +2,12 @@
 
 Three rules decide where a control goes.
 
-A control is in the user panel only if changing it makes a visible
-difference to *this question*. Chunking does not — it affects documents
-ingested later — so it sits with ingestion, next to the button that
-applies it.
+The user panel holds only what someone changes per question: which
+model answers, and how sure it must be before it answers at all.
+Everything else is a deployment choice — set once, then left — and
+lives behind the advanced toggle, whatever it costs per question.
+Chunking goes further still and sits with ingestion, next to the
+button that applies it.
 
 Every control says what it changes and what it costs. The re-ranker costs
 about a second per candidate; extra reasoning steps cost model calls
@@ -14,8 +16,8 @@ choice is made.
 
 Nothing in the user panel can switch off the refusal guarantee. Turning
 off re-ranking disables the similarity floor, which is the property the
-whole product rests on, so it lives behind the advanced toggle with a
-warning rather than one click from every question.
+whole product rests on, so it lives behind the advanced toggle, and says
+so where it is switched rather than one click from every question.
 """
 import streamlit as st
 
@@ -66,7 +68,7 @@ def render(svc) -> dict:
     prefs = svc["prefs"]
 
     with st.expander("Settings", expanded=True):
-        # ── Ask: the four things that change this question ──────────
+        # ── Ask: the two things that change this question ───────────
         available_models = list_chat_models(
             cfg.ollama_url, cfg.embedding_model
         ) or [cfg.llm_model]
@@ -96,25 +98,6 @@ def render(svc) -> dict:
         floor = STRICTNESS[strictness]
         st.caption(f"Relevance floor: {floor:.2f}")
 
-        thorough = st.checkbox(
-            "Thorough search", value=bool(prefs.get("thorough", False)),
-            help="Searches several rewordings of your question and, if the "
-                 "first pass comes back thin, looks for what is missing and "
-                 "searches again. For questions your documents phrase "
-                 "differently than you do, or that need two passages. Costs "
-                 "one or two extra model calls before the answer starts; "
-                 "the trace shows what it did.",
-        )
-        follow_up = st.checkbox(
-            "Remember this conversation",
-            value=bool(prefs.get("follow_up", True)),
-            help="Resolves what a follow-up refers to before searching, so "
-                 "\"and the base year for that?\" searches for the thing you "
-                 "were discussing rather than the words you typed. Costs one "
-                 "model call per follow-up. The answer sees the recent "
-                 "conversation either way.",
-        )
-
         # ── Everything else ─────────────────────────────────────────
         st.divider()
         admin = st.toggle(
@@ -126,23 +109,15 @@ def render(svc) -> dict:
         candidates = int(prefs.get("candidates", cfg.candidates))
         use_reranker = bool(prefs.get("use_reranker", True))
         temperature = float(prefs.get("temperature", 0.0))
-        rewrite = bool(prefs.get("rewrite", False))
+        # On unless someone turns them off. Both are behind the advanced
+        # toggle, so these defaults are what almost every question uses;
+        # the panel is where they are switched, not where they are chosen.
+        thorough = bool(prefs.get("thorough", True))
+        follow_up = bool(prefs.get("follow_up", True))
         self_correct = bool(prefs.get("self_correct", False))
 
         if admin:
             st.markdown("**Retrieval**")
-            candidates = st.slider(
-                "Candidates considered", min_value=10, max_value=100,
-                value=candidates, step=5,
-                help="How many passages are fetched before re-ranking picks "
-                     "the best few. The re-ranker scores every one of them — "
-                     "roughly a second each — so doubling this roughly "
-                     "doubles the wait. It cannot rescue an answer the "
-                     "search ranks far down: an exact code in a large table "
-                     "sat 291st on this corpus, which no setting here reaches.",
-            )
-            prefs.set("candidates", int(candidates))
-
             use_reranker = st.checkbox(
                 "Re-rank results", value=use_reranker,
                 help="A second, more careful pass over the retrieved "
@@ -152,6 +127,32 @@ def render(svc) -> dict:
                      "rather than guesses.",
             )
             prefs.set("use_reranker", bool(use_reranker))
+
+            # Only the re-ranker consumes the candidate pool. With it off,
+            # find() returns pool[:top_k] (retrieval/search.py) and every
+            # candidate past the fifth is discarded, so offering the slider
+            # would be offering a setting that changes nothing.
+            if use_reranker:
+                candidates = st.slider(
+                    "Candidates considered", min_value=10, max_value=100,
+                    value=candidates, step=5,
+                    help="How many passages are fetched before re-ranking "
+                         "picks the best few. The re-ranker scores every one "
+                         "of them — roughly a second each — so doubling this "
+                         "roughly doubles the wait. It cannot rescue an "
+                         "answer the search ranks far down: an exact code in "
+                         "a large table sat 291st on this corpus, which no "
+                         "setting here reaches.",
+                )
+                prefs.set("candidates", int(candidates))
+            else:
+                st.caption(
+                    "Without re-ranking the app keeps the top few passages "
+                    "as the search ranked them, and the relevance floor does "
+                    "not apply — it answers whenever anything is retrieved. "
+                    "The candidate pool is not used, so its size is not "
+                    "offered here."
+                )
 
             st.caption(
                 "Search mode: "
@@ -170,51 +171,55 @@ def render(svc) -> dict:
             )
             prefs.set("temperature", float(temperature))
 
+            # No caption here: each box carries its own cost and default
+            # in its help text, which is where the choice is actually made.
             st.markdown("**Extra reasoning steps**")
-            st.caption(
-                "Thorough search above runs the two with a case for them. "
-                "These two are unvalidated: no golden-set evidence says they "
-                "help, and each costs model calls before the answer starts."
+            thorough = st.checkbox(
+                "Rephrase the question", value=thorough,
+                help="On by default. Costs one or two extra model calls "
+                     "before the answer starts.\n\nSearches several "
+                     "rewordings of your question alongside the words you "
+                     "typed and, if the first pass comes back thin, looks "
+                     "for what is missing and searches again. For questions "
+                     "your documents phrase differently than you do, or that "
+                     "need two passages. The trace shows what it did.",
             )
-            rewrite = st.checkbox(
-                "Reword the question for search", value=rewrite,
-                help="Largely redundant now: follow-up resolution already "
-                     "rewrites references, and lexical search already finds "
-                     "the identifiers this was meant for.",
+            prefs.set("thorough", bool(thorough))
+            follow_up = st.checkbox(
+                "Remember context", value=follow_up,
+                help="On by default. Costs one model call per follow-up, and "
+                     "nothing on the first question of a chat.\n\nResolves "
+                     "what a follow-up refers to before searching, so \"and "
+                     "the base year for that?\" searches for the thing you "
+                     "were discussing rather than the words you typed. The "
+                     "answer sees the recent conversation either way.",
             )
-            prefs.set("rewrite", bool(rewrite))
+            prefs.set("follow_up", bool(follow_up))
             self_correct = st.checkbox(
                 "Check the draft answer", value=self_correct,
-                help="Drafts an answer, judges whether the excerpts support "
-                     "it, and searches again if not. The most expensive "
-                     "option: two model calls before the answer you see.",
+                help="Off by default. The most expensive option: two model "
+                     "calls before the answer you see, and no golden-set "
+                     "evidence yet that it helps.\n\nDrafts an answer, "
+                     "judges whether the excerpts support it, and searches "
+                     "again if not.",
             )
             prefs.set("self_correct", bool(self_correct))
 
             _render_ingestion(svc, cfg, prefs)
             _render_diagnostics(svc, cfg)
 
-    if not use_reranker:
-        st.warning(
-            "Re-ranking is off, so the relevance floor does not apply: the "
-            "app will answer whenever anything is retrieved rather than "
-            "refusing when nothing is a good match.",
-            icon="⚠️",
-        )
-
     prefs.set("floor", float(floor))
-    prefs.set("thorough", bool(thorough))
-    prefs.set("follow_up", bool(follow_up))
 
     return {
         "model": model, "temperature": temperature,
         "floor": floor, "candidates": candidates,
         "use_reranker": use_reranker, "follow_up": follow_up,
-        # Thorough search is the two stages with a case for them; the other
-        # two stay individually switchable in advanced until there is
-        # evidence either way.
+        # "Rephrase the question" is the two stages with a case for
+        # them; self_correct stays separately switchable until there is
+        # evidence either way. The stored pref key stays "thorough" so
+        # the rename does not reset anyone's saved choice.
         "multi_query": thorough, "multi_hop": thorough,
-        "rewrite": rewrite, "self_correct": self_correct,
+        "self_correct": self_correct,
     }
 
 
