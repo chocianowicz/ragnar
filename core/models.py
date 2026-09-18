@@ -45,6 +45,20 @@ class Document:
     status: IngestStatus = IngestStatus.QUEUED
     error: str | None = None
     chunk_count: int = 0
+    folder_id: str | None = None   # None = Unfiled
+
+
+@dataclass
+class Folder:
+    """A named group of documents.
+
+    Identity is folder_id, not name: the name is a label the user renames
+    freely, and a saved chat scope stores the id, so a rename never has to
+    reach into chats.db.
+    """
+    folder_id: str
+    name: str
+    created_at: float
 
 
 @dataclass
