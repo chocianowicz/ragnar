@@ -17,6 +17,12 @@ CREATE TABLE IF NOT EXISTS documents (
     finished_at REAL,
     added_at    REAL NOT NULL DEFAULT (julianday('now'))
 );
+
+CREATE TABLE IF NOT EXISTS folders (
+    folder_id  TEXT PRIMARY KEY,
+    name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    created_at REAL NOT NULL
+);
 """
 
 # Columns added after the first release; applied to pre-existing databases
@@ -25,6 +31,7 @@ _MIGRATIONS = [
     ("bytes", "INTEGER NOT NULL DEFAULT 0"),
     ("started_at", "REAL"),
     ("finished_at", "REAL"),
+    ("folder_id", "TEXT"),
 ]
 
 
@@ -91,6 +98,23 @@ class Registry:
             self._conn.execute(sql, params)
             self._conn.commit()
 
+    def _write_many(self, statements: list[tuple[str, tuple]]) -> None:
+        """Several statements, one lock and one commit.
+
+        _write runs a single statement, which is enough for every other
+        mutation. Deleting a folder is two - unfile its documents, then
+        drop the row - and they must not be separable, or a failure
+        between them leaves documents pointing at a folder that is gone.
+        """
+        with self._lock:
+            try:
+                for sql, params in statements:
+                    self._conn.execute(sql, params)
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
+
     def _row_to_doc(self, row) -> Document:
         return Document(
             doc_id=row["doc_id"],
@@ -98,6 +122,7 @@ class Registry:
             status=IngestStatus(row["status"]),
             error=row["error"],
             chunk_count=row["chunk_count"],
+            folder_id=row["folder_id"],
         )
 
     def add(self, doc_id: str, filename: str, size_bytes: int = 0) -> None:

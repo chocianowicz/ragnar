@@ -1,3 +1,5 @@
+import sqlite3
+
 import pytest
 from core.models import IngestStatus
 from ingestion.registry_db import Registry, estimate_eta
@@ -151,3 +153,40 @@ def test_registry_migrates_a_pre_timing_database(tmp_path):
     assert reg.get("old1").status == IngestStatus.PROCESSING
     processing, queued, eta = reg.ingest_eta()
     assert processing == 1
+
+
+def test_folder_id_is_added_to_a_database_from_before_the_column(tmp_path):
+    """A registry created by an earlier release gains the column on open."""
+    path = tmp_path / "registry.db"
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        "CREATE TABLE documents ("
+        " doc_id TEXT PRIMARY KEY, filename TEXT NOT NULL,"
+        " status TEXT NOT NULL, error TEXT,"
+        " chunk_count INTEGER NOT NULL DEFAULT 0,"
+        " bytes INTEGER NOT NULL DEFAULT 0,"
+        " added_at REAL NOT NULL DEFAULT (julianday('now')));"
+    )
+    conn.execute(
+        "INSERT INTO documents (doc_id, filename, status) VALUES (?, ?, ?)",
+        ("old", "prior.pdf", "done"),
+    )
+    conn.commit()
+    conn.close()
+
+    registry = Registry(path)
+
+    assert registry.get("old").folder_id is None
+
+
+def test_write_many_is_atomic(registry):
+    """Both statements land, or neither does."""
+    registry.add("a", "one.pdf")
+
+    with pytest.raises(sqlite3.OperationalError):
+        registry._write_many([
+            ("UPDATE documents SET filename = ? WHERE doc_id = ?", ("x", "a")),
+            ("UPDATE nonexistent SET k = 1", ()),
+        ])
+
+    assert registry.get("a").filename == "one.pdf"
