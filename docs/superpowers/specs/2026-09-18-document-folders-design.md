@@ -126,13 +126,20 @@ the name costs one check and removes the whole class of confusion.
 |---|---|
 | New folder | Validate, then `INSERT INTO folders` with a fresh uuid4 |
 | Rename | Validate, then `UPDATE folders SET name = ?` — registry only |
-| Delete | `UPDATE documents SET folder_id = NULL` then `DELETE FROM folders`, one transaction |
+| Delete | `UPDATE documents SET folder_id = NULL` then `DELETE FROM folders`, atomically |
 | Move | `UPDATE documents SET folder_id = ?` |
 
 All four run on the registry's existing lock-guarded connection. This
 matters: the ingestion worker thread writes to the same database (status
-transitions, chunk counts), so folder writes use `Registry._write` like
-every other mutation rather than opening a connection of their own.
+transitions, chunk counts), so folder writes hold the same lock as every
+other mutation rather than opening a connection of their own.
+
+New/Rename/Move are single statements and use the existing
+`Registry._write(sql, params)`. **Delete is two statements and cannot**:
+`_write` executes exactly one. It needs a sibling —
+`_write_many(list[tuple[str, tuple]])` — taking the lock once and committing
+once, so a delete can never leave a folder row whose documents still point
+at it. Adding that helper is part of this work.
 
 ### A re-uploaded document inherits its folder
 
@@ -153,7 +160,7 @@ the chat was saved. It is therefore a JSON object, not a list of names:
 
 ```json
 {"v": 1, "all": true}
-{"v": 1, "folders": ["9f2c…"], "docs": ["a1b2…"]}
+{"v": 1, "folders": ["9f2c…", "unfiled"], "docs": ["a1b2…"]}
 ```
 
 **Saving.** If every document is ticked, store `{"all": true}` — the
@@ -170,12 +177,29 @@ dropped.
 Because folder membership is resolved at restore time, a document added to
 Acme Corp after the chat was saved comes back ticked.
 
+### Unfiled takes part as the sentinel id `unfiled`
+
+Unfiled has no row, so it has no uuid to put in the `folders` list. Captured
+only as individual document ids, it would be **the one folder that does not
+pick up new documents** — a chat saved with all of Unfiled ticked would
+restore with a since-added document unticked, while the same scenario in a
+named folder restores it ticked. The panel draws Unfiled as a peer of every
+other folder, so that divergence would read as a bug.
+
+So the scope's `folders` list may contain the literal string `unfiled`,
+meaning "every document with `folder_id IS NULL`, resolved at restore time".
+Real ids are uuid4 and cannot collide with it.
+
+Unfiled therefore behaves exactly like a named folder in a saved scope, and
+the reserved-name rule above keeps the two from ever being confused in the
+UI.
+
 ### An empty scope means refuse, and must keep meaning that
 
 `ui/app.py` already treats an explicit empty selection as a genuine
-instruction: the comment at line 154 reads *"which may be an empty list,
-correctly refusing"*, and `retrieval/store.py:219` short-circuits an empty
-`doc_ids` to no results rather than querying Qdrant.
+instruction: the comment at lines 152-155 says an explicit filter *"may be
+an empty list, correctly refusing"*, and `retrieval/store.py:219`
+short-circuits an empty `doc_ids` to no results rather than querying Qdrant.
 
 So `{"v": 1, "folders": [], "docs": []}` means **nothing is selected, refuse**
 — it is not the same as `{"all": true}`, and not the same as a `NULL`
@@ -222,6 +246,11 @@ checkbox is **checked only when every document in it is checked**, and the
 of its documents.
 
 This is a platform limit, recorded so it is not later mistaken for a defect.
+
+An empty folder satisfies "every document is checked" vacuously, so
+`folder_state` returns `(True, "0/0")`: it renders checked and stays
+consistent with Select all, while contributing no document ids to the
+filter and so changing no answer.
 
 ### Ticking a folder
 
@@ -285,11 +314,14 @@ Chat store (`history/chat_store.py`):
   regression that would reverse the refusal guarantee
 - a `NULL` scope on a pre-feature chat restores as everything
 - a scope naming a deleted folder drops it and keeps the rest
-- a folder that gained a document since saving restores with it ticked
+- a *named* folder that gained a document since saving restores with it
+  ticked
+- **Unfiled** that gained a document since saving restores with it ticked
+  too — the sentinel behaves like a real folder, not like a snapshot
 
 Pure logic (`ui/folders.py`):
 - `folder_state` for none, some and all documents checked
-- `folder_state` for an empty folder
+- `folder_state` for an empty folder returns `(True, "0/0")`
 
 ## Out of scope
 
