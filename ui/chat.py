@@ -117,11 +117,6 @@ def render_trace(trace, key: str) -> None:
                 f"before the answer · pool widened to "
                 f"**{agentic.get('pool_size', 0)}** passages"
             )
-            if agentic.get("rewritten_query"):
-                # st.text, not markdown: this is model output and must not
-                # be able to inject formatting or markup into the page.
-                st.caption("Searched instead for:")
-                st.text(agentic["rewritten_query"])
             queries = agentic.get("queries") or []
             if len(queries) > 1:
                 st.caption(f"{len(queries)} phrasings searched:")

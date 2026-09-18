@@ -4,19 +4,6 @@ Each returns (system, user). Outputs are deliberately terse and tagged, so
 parsing does not depend on the model being chatty in a particular way.
 """
 
-REWRITE_SYSTEM = """\
-You rewrite a user's question into a better search query for a document
-retrieval system.
-
-Rules:
-- Keep every proper noun, number, code and identifier exactly as written.
-  They are what the lexical search matches on; changing them loses the
-  document.
-- Expand abbreviations and resolve vague references where you can.
-- Preserve the original language.
-- Output only the rewritten query. No explanation, no quotes.
-"""
-
 MULTI_QUERY_SYSTEM = """\
 You generate alternative phrasings of a question, to widen a document
 search that may miss the answer on wording alone.
@@ -51,10 +38,6 @@ Judge only whether the excerpts support the answer. Do not add knowledge
 of your own. Say "yes" unless something the question asked for is
 genuinely absent.
 """
-
-
-def build_rewrite_prompt(question: str) -> tuple[str, str]:
-    return REWRITE_SYSTEM, f"Question: {question}"
 
 
 def build_multi_query_prompt(question: str, count: int) -> tuple[str, str]:

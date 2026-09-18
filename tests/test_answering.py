@@ -61,7 +61,7 @@ def _outcome(*texts, refused=False, related=()):
 
 def _settings(**over):
     base = dict(model="m", temperature=0.0, floor=0.5, candidates=25,
-                use_reranker=True, follow_up=False, rewrite=False,
+                use_reranker=True, follow_up=False,
                 multi_query=False, multi_hop=False, self_correct=False)
     base.update(over)
     return Settings(**base)

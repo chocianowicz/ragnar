@@ -1,4 +1,4 @@
-"""Agentic retrieval: rewrite the query, search several ways, follow up.
+"""Agentic retrieval: search several phrasings, follow up.
 
 Wraps Search and uses only its public seams — retrieve() for a raw
 candidate pool, narrow() to rerank and apply the floor. It does not
@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 
 from core.models import SearchResult
 from generation.agentic_prompts import (
-    build_rewrite_prompt, build_multi_query_prompt, build_hop_prompt,
+    build_multi_query_prompt, build_hop_prompt,
     build_correction_prompt, parse_tagged,
 )
 
@@ -43,7 +43,6 @@ logger = logging.getLogger(__name__)
 @dataclass
 class AgenticTrace:
     """What the agent did, for the UI to show beside the retrieval trace."""
-    rewritten_query: str | None = None
     queries: list[str] = field(default_factory=list)
     hops: int = 0
     self_corrected: bool = False
@@ -96,7 +95,6 @@ class AgenticSearch:
              score_floor: float | None = None,
              candidates: int | None = None,
              use_reranker: bool = True,
-             rewrite: bool = False,
              multi_query: bool = False,
              multi_hop: bool = False,
              self_correct: bool = False,
@@ -110,13 +108,12 @@ class AgenticSearch:
         trace = AgenticTrace()
         limit = candidates if candidates is not None else None
 
+        # The question is always searched as asked. Alternative
+        # phrasings are added beside it, never in place of it: the
+        # lexical half of hybrid search matches the user's own
+        # identifiers, so replacing their wording can only lose
+        # documents.
         search_query = question
-        if rewrite:
-            step("Rewriting the question for search")
-            search_query = self._rewrite(question, trace)
-            trace.rewritten_query = (
-                search_query if search_query != question else None)
-
         queries = [search_query]
         if multi_query:
             step("Thinking of other ways to ask")
@@ -167,15 +164,6 @@ class AgenticSearch:
             logger.warning("agentic stage failed: %s", exc)
             trace.notes.append("a reasoning step failed and was skipped")
             return None
-
-    def _rewrite(self, question: str, trace: AgenticTrace) -> str:
-        system, user = build_rewrite_prompt(question)
-        rewritten = self._ask(system, user, trace)
-        # A rewrite that collapses to almost nothing has lost the question;
-        # keep the original rather than search for a fragment.
-        if rewritten and len(rewritten) >= max(8, len(question) // 4):
-            return rewritten
-        return question
 
     def _variant_queries(self, question: str,
                          trace: AgenticTrace) -> list[str]:

@@ -36,15 +36,14 @@ class Settings:
     candidates: int
     use_reranker: bool
     follow_up: bool
-    rewrite: bool
     multi_query: bool
     multi_hop: bool
     self_correct: bool
 
     @property
     def wants_extra_stages(self) -> bool:
-        return any((self.rewrite, self.multi_query,
-                    self.multi_hop, self.self_correct))
+        return any((self.multi_query, self.multi_hop,
+                    self.self_correct))
 
 
 def answer(job, question: str, *, history: list[dict],
@@ -70,8 +69,8 @@ def answer(job, question: str, *, history: list[dict],
 
     if settings.wants_extra_stages and agentic is not None:
         outcome, agentic_trace = agentic.find(
-            search_question, rewrite=settings.rewrite,
-            multi_query=settings.multi_query, multi_hop=settings.multi_hop,
+            search_question, multi_query=settings.multi_query,
+            multi_hop=settings.multi_hop,
             self_correct=settings.self_correct, **common)
     else:
         outcome = search.find(search_question, **common)

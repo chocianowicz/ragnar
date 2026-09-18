@@ -52,9 +52,9 @@ storage:
 # dominates. Turn them on per question in Settings and watch the trace -
 # "How this answer was found" reports how many calls each question made.
 agentic:
-  rewrite: false          # reword the question for search
-  multi_query: false      # search several phrasings, rerank the union once
-  multi_hop: false        # look for gaps and search again
-  self_correct: false     # draft an answer, check it, search again if thin
-  max_hops: 2
-  variants: 3
+  # Which stages run is not set here. They are per-instance choices made in
+  # Settings -> advanced and stored in data/settings.json, so a key here
+  # would be read by nothing and contradict the running app. Only the two
+  # values below shape a stage once it is on.
+  max_hops: 2             # extra searches when a first pass comes back thin
+  variants: 3             # alternative phrasings searched beside the original

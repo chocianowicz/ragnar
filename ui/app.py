@@ -181,7 +181,7 @@ if question := st.chat_input("Ask about your documents",
         model=query["model"], temperature=query["temperature"],
         floor=query["floor"], candidates=query["candidates"],
         use_reranker=query["use_reranker"], follow_up=query["follow_up"],
-        rewrite=query["rewrite"], multi_query=query["multi_query"],
+        multi_query=query["multi_query"],
         multi_hop=query["multi_hop"], self_correct=query["self_correct"])
 
     jobs.start(

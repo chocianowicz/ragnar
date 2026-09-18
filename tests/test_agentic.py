@@ -45,38 +45,29 @@ def test_no_llm_call_when_nothing_is_retrieved():
     assert trace.llm_calls == 0
 
 
-# --- rewriting ----------------------------------------------------------
+# --- phrasings ----------------------------------------------------------
 
-def test_rewrite_changes_the_query_sent_to_the_store():
+def test_the_question_is_always_searched_as_asked():
+    """Variants are added beside the user's wording, never in place of it:
+    the lexical half of hybrid search matches on their own identifiers."""
     store = RecordingStore([_result("a")])
     agentic, _ = _agentic(store, ScriptedLLM(["notice period termination"]))
 
-    _, trace = agentic.find("when can I quit?", rewrite=True)
+    agentic.find("when can I quit?", multi_query=True)
 
-    assert store.queries == ["notice period termination"]
-    assert trace.rewritten_query == "notice period termination"
-
-
-def test_a_degenerate_rewrite_is_discarded():
-    """A rewrite that collapses to a fragment has lost the question."""
-    store = RecordingStore([_result("a")])
-    agentic, _ = _agentic(store, ScriptedLLM(["?"]))
-
-    agentic.find("what is the agreed notice period for termination?",
-                 rewrite=True)
-
-    assert store.queries == ["what is the agreed notice period for termination?"]
+    assert store.queries[0] == "when can I quit?"
+    assert "notice period termination" in store.queries
 
 
-def test_reranking_uses_the_original_question_not_the_rewrite():
+def test_reranking_uses_the_original_question_not_a_variant():
     """Otherwise a chunk can clear the floor against wording the user never
     used, and be cited as though it answered their question."""
     reranker = PassThroughReranker()
     store = RecordingStore([_result("a")])
-    agentic, _ = _agentic(store, ScriptedLLM(["rewritten form"]),
+    agentic, _ = _agentic(store, ScriptedLLM(["some other phrasing"]),
                           reranker=reranker)
 
-    agentic.find("original question", rewrite=True)
+    agentic.find("original question", multi_query=True)
 
     assert reranker.queries == ["original question"]
 
@@ -204,7 +195,7 @@ def test_a_failing_model_degrades_to_a_plain_search():
     store = RecordingStore([_result("a")])
     agentic, _ = _agentic(store, FailingLLM())
 
-    outcome, trace = agentic.find("q", rewrite=True, multi_query=True)
+    outcome, trace = agentic.find("q", multi_query=True)
 
     assert [r.chunk.text for r in outcome.results] == ["a"]
     assert store.queries == ["q"]
@@ -222,7 +213,7 @@ def test_results_are_capped_to_top_k():
     assert len(outcome.results) == 5
 
 
-@pytest.mark.parametrize("flag", ["rewrite", "multi_query", "multi_hop",
+@pytest.mark.parametrize("flag", ["multi_query", "multi_hop",
                                   "self_correct"])
 def test_each_stage_is_individually_optional(flag):
     store = RecordingStore([_result("a")])
@@ -267,7 +258,7 @@ def test_agentic_trace_serialises_every_field():
     import dataclasses
     from retrieval.agentic import AgenticTrace
 
-    trace = AgenticTrace(rewritten_query="x", queries=["a", "b"], hops=1,
+    trace = AgenticTrace(queries=["a", "b"], hops=1,
                          self_corrected=True, pool_size=25, llm_calls=2,
                          notes=["n"])
     data = trace.as_dict()
