@@ -1,7 +1,7 @@
 import streamlit as st
 
 from ui.services import format_eta
-from ui import sources
+from ui import folders, sources
 
 STATUS_ICONS = {"queued": "⏳", "processing": "⚙️", "done": "✅", "failed": "❌"}
 
@@ -96,6 +96,7 @@ def _status_strip_body(svc) -> None:
         )
 
     docs = svc["registry"].all()
+    all_folders = svc["registry"].folders()
 
     def _select_all_changed():
         value = st.session_state.get("select_all_docs", True)
@@ -106,52 +107,208 @@ def _status_strip_body(svc) -> None:
         st.checkbox("Select all", value=True, key="select_all_docs",
                     on_change=_select_all_changed)
         st.caption(
-            "Unchecked documents are excluded from answers — only "
-            "checked ones are searched."
+            "Unchecked documents and folders are excluded from answers — "
+            "only checked ones are searched."
         )
 
-    for doc in docs:
-        icon = STATUS_ICONS[doc.status.value]
+    checked_ids = {
+        d.doc_id for d in docs
+        if st.session_state.get(f"sel_{d.doc_id}", True)
+    }
+    for folder_id, label, group in folders.group_for_display(docs,
+                                                             all_folders):
+        _render_folder(svc, folder_id, label, group, checked_ids, all_folders)
 
-        col_check, col_view, col_remove = st.columns([0.6, 4.4, 1])
-        with col_check:
-            st.checkbox(f"Include {doc.filename}", value=True,
-                        key=f"sel_{doc.doc_id}",
-                        label_visibility="collapsed")
-        with col_view:
-            if st.button(f"{icon} {doc.filename}", key=f"view_{doc.doc_id}",
-                         use_container_width=True):
-                show_key = f"show_md_{doc.doc_id}"
-                st.session_state[show_key] = not st.session_state.get(show_key, False)
-        with col_remove:
-            with st.container(key=f"remove_container_{doc.doc_id}"):
-                if st.button("✕", key=f"rm_{doc.doc_id}",
-                             help=f"Remove {doc.filename}"):
-                    svc["store"].delete_by_doc(doc.doc_id)
-                    svc["storage"].remove_converted(doc.doc_id)
-                    # Also drop the served copy, or the file stays
-                    # downloadable by URL after the delete button says it
-                    # is gone.
-                    sources.unpublish(doc.doc_id, doc.filename)
-                    svc["registry"].remove(doc.doc_id)
+    _render_folder_controls(svc, all_folders)
+
+
+def _render_folder(svc, folder_id, label, group, checked_ids,
+                   all_folders) -> None:
+    """One folder's header row, then its documents."""
+    is_checked, count = folders.folder_state(group, checked_ids)
+
+    def _folder_changed(folder_id=folder_id, group=group):
+        value = st.session_state.get(f"folder_sel_{folder_id}", True)
+        for d in group:
+            st.session_state[f"sel_{d.doc_id}"] = value
+
+    # Streamlit ignores value= once a widget's key is in session state, so
+    # a derived checkbox has to be written INTO session state before it
+    # renders. Without this the folder box freezes at whatever it showed
+    # first while the count moves beneath it.
+    st.session_state[f"folder_sel_{folder_id}"] = is_checked
+
+    col_check, col_name, col_count = st.columns([0.6, 4.4, 1])
+    with col_check:
+        st.checkbox(f"Include {label}", key=f"folder_sel_{folder_id}",
+                    on_change=_folder_changed, label_visibility="collapsed")
+    with col_name:
+        st.markdown(f"**{label}**")
+    with col_count:
+        st.caption(count)
+
+    if not group:
+        st.caption("&nbsp;&nbsp;&nbsp;&nbsp;_empty_", unsafe_allow_html=True)
+    for doc in group:
+        _render_document(svc, doc, all_folders)
+
+
+NEW_FOLDER = "New folder…"
+
+
+def _folder_picker(svc, doc, all_folders) -> None:
+    """The control that files a document.
+
+    Includes a New folder… entry so the first document can be filed
+    without hunting for the panel button first — on a fresh install there
+    are no folders to pick from at all.
+    """
+    names = [folders.UNFILED_LABEL] + [f.name for f in all_folders]
+    names.append(NEW_FOLDER)
+    current = next((f.name for f in all_folders
+                    if f.folder_id == doc.folder_id), folders.UNFILED_LABEL)
+    picked = st.selectbox(
+        f"Folder for {doc.filename}", names, index=names.index(current),
+        key=f"folder_of_{doc.doc_id}", label_visibility="collapsed",
+    )
+    if picked == current:
+        return
+    if picked == NEW_FOLDER:
+        st.session_state["new_folder_for"] = doc.doc_id
+        del st.session_state[f"folder_of_{doc.doc_id}"]
+        st.rerun()
+    target = next((f.folder_id for f in all_folders if f.name == picked),
+                  None)
+    svc["registry"].set_folder(doc.doc_id, target)
+    st.rerun()
+
+
+def _render_document(svc, doc, all_folders) -> None:
+    icon = STATUS_ICONS[doc.status.value]
+
+    col_check, col_view, col_folder, col_remove = st.columns(
+        [0.6, 3.0, 1.4, 1])
+    with col_check:
+        st.checkbox(f"Include {doc.filename}", value=True,
+                    key=f"sel_{doc.doc_id}",
+                    label_visibility="collapsed")
+    with col_view:
+        if st.button(f"{icon} {doc.filename}", key=f"view_{doc.doc_id}",
+                     use_container_width=True):
+            show_key = f"show_md_{doc.doc_id}"
+            st.session_state[show_key] = not st.session_state.get(show_key, False)
+    with col_folder:
+        _folder_picker(svc, doc, all_folders)
+    with col_remove:
+        with st.container(key=f"remove_container_{doc.doc_id}"):
+            if st.button("✕", key=f"rm_{doc.doc_id}",
+                         help=f"Remove {doc.filename}"):
+                svc["store"].delete_by_doc(doc.doc_id)
+                svc["storage"].remove_converted(doc.doc_id)
+                # Also drop the served copy, or the file stays
+                # downloadable by URL after the delete button says it
+                # is gone.
+                sources.unpublish(doc.doc_id, doc.filename)
+                svc["registry"].remove(doc.doc_id)
+                st.rerun()
+
+    # Outside the columns, as they were in the flat list: the viewer needs
+    # the full width, not a quarter of it.
+    if doc.error:
+        err_col, retry_col = st.columns([4, 1])
+        with err_col:
+            st.caption(f"↳ {doc.error}")
+        if doc.status.value == "failed":
+            with retry_col:
+                if st.button("🔄", key=f"retry_{doc.doc_id}",
+                             help=f"Retry ingesting {doc.filename}"):
+                    # Failed documents are never archived - the original
+                    # is still sitting in inbox, so requeuing alone is
+                    # enough to retry.
+                    svc["registry"].requeue(doc.doc_id)
                     st.rerun()
 
-        if doc.error:
-            err_col, retry_col = st.columns([4, 1])
-            with err_col:
-                st.caption(f"↳ {doc.error}")
-            if doc.status.value == "failed":
-                with retry_col:
-                    if st.button("🔄", key=f"retry_{doc.doc_id}",
-                                 help=f"Retry ingesting {doc.filename}"):
-                        # Failed documents are never archived - the original
-                        # is still sitting in inbox, so requeuing alone is
-                        # enough to retry.
-                        svc["registry"].requeue(doc.doc_id)
-                        st.rerun()
+    if doc.status.value == "done" and st.session_state.get(f"show_md_{doc.doc_id}"):
+        _render_viewer(svc, doc)
 
-        if doc.status.value == "done" and st.session_state.get(f"show_md_{doc.doc_id}"):
-            _render_viewer(svc, doc)
+
+def _forget_pickers() -> None:
+    """Drop every row picker's remembered value.
+
+    A selectbox with a key redisplays its stored VALUE, not its index, and
+    Streamlit validates that value against the current options. Renaming or
+    deleting a folder changes the options, so a picker still holding the
+    old name would raise or snap to the wrong entry. Clearing the keys
+    makes every picker re-derive from the document's folder_id, which is
+    the truth.
+    """
+    for key in [k for k in st.session_state if k.startswith("folder_of_")]:
+        del st.session_state[key]
+
+
+def _render_folder_controls(svc, all_folders) -> None:
+    """New / Rename / Delete, under the list.
+
+    Rename and Delete act on a chosen folder rather than on ticked rows:
+    the checkboxes mean "search this", and reusing them to mean "act on
+    this" is exactly the overloading this design avoids.
+    """
+    st.divider()
+    pending = st.session_state.get("new_folder_for")
+    if pending:
+        st.caption("Name the new folder — the document moves into it.")
+
+    with st.form("new_folder", clear_on_submit=True):
+        cols = st.columns([4, 1])
+        with cols[0]:
+            name = st.text_input("New folder", placeholder="e.g. Acme Corp",
+                                 label_visibility="collapsed")
+        with cols[1]:
+            submitted = st.form_submit_button("Add", use_container_width=True)
+    if submitted:
+        try:
+            clean = folders.validate_name(name, all_folders)
+        except folders.FolderNameError as exc:
+            st.error(str(exc))
+        else:
+            new_id = svc["registry"].create_folder(clean)
+            if pending:
+                svc["registry"].set_folder(pending, new_id)
+                del st.session_state["new_folder_for"]
+            st.rerun()
+
+    if not all_folders:
+        return
+
+    names = [f.name for f in all_folders]
+    chosen = st.selectbox("Folder to rename or delete", names,
+                          key="folder_admin_target")
+    target = next(f for f in all_folders if f.name == chosen)
+
+    cols = st.columns([3, 1, 1])
+    with cols[0]:
+        new_name = st.text_input("Rename to", value=target.name,
+                                 key=f"rename_{target.folder_id}",
+                                 label_visibility="collapsed")
+    with cols[1]:
+        if st.button("Rename", use_container_width=True):
+            try:
+                clean = folders.validate_name(new_name, all_folders,
+                                              allow_id=target.folder_id)
+            except folders.FolderNameError as exc:
+                st.error(str(exc))
+            else:
+                svc["registry"].rename_folder(target.folder_id, clean)
+                _forget_pickers()
+                st.rerun()
+    with cols[2]:
+        held = sum(1 for d in svc["registry"].all()
+                   if d.folder_id == target.folder_id)
+        if st.button("Delete", use_container_width=True,
+                     help=f"{held} document(s) move to Unfiled"):
+            svc["registry"].delete_folder(target.folder_id)
+            _forget_pickers()
+            st.rerun()
 
 
 def _render_viewer(svc, doc) -> None:
