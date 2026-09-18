@@ -127,11 +127,33 @@ class Registry:
         )
 
     def add(self, doc_id: str, filename: str, size_bytes: int = 0) -> None:
-        self._write(
-            "INSERT OR IGNORE INTO documents (doc_id, filename, status, bytes) "
-            "VALUES (?, ?, ?, ?)",
-            (doc_id, filename, IngestStatus.QUEUED.value, size_bytes),
-        )
+        """Queue a document, inheriting the folder of its previous version.
+
+        doc_id is a hash of the file's bytes, so re-uploading a corrected
+        document arrives as a new, unrelated id. Matching on filename keeps
+        it in the folder the user filed the old one in; they can always
+        move it afterwards.
+
+        The lookup and the insert share one lock acquisition - _write would
+        take the same non-reentrant lock again - so the worker thread
+        cannot file a document between them.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT folder_id FROM documents "
+                "WHERE filename = ? AND folder_id IS NOT NULL "
+                "ORDER BY added_at DESC LIMIT 1",
+                (filename,),
+            ).fetchone()
+            inherited = row["folder_id"] if row else None
+            self._conn.execute(
+                "INSERT OR IGNORE INTO documents "
+                "(doc_id, filename, status, bytes, folder_id) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (doc_id, filename, IngestStatus.QUEUED.value, size_bytes,
+                 inherited),
+            )
+            self._conn.commit()
 
     def folders(self) -> list[Folder]:
         """Every folder, by name, case-insensitively."""

@@ -244,3 +244,28 @@ def test_deleting_a_folder_returns_its_documents_to_unfiled(registry):
     assert registry.get("a").folder_id is None
     assert registry.get("b").folder_id is None
     assert registry.get("a").filename == "a.pdf"
+
+
+def test_a_reuploaded_file_inherits_its_folder(registry):
+    """doc_id is a content hash, so correcting a typo mints a new id.
+
+    Without this the document would silently leave the folder the user
+    filed it in, at exactly the moment they expect it to stay put.
+    """
+    folder_id = registry.create_folder("Acme Corp")
+    registry.add("hash-v1", "nda.pdf")
+    registry.set_folder("hash-v1", folder_id)
+
+    registry.add("hash-v2", "nda.pdf")
+
+    assert registry.get("hash-v2").folder_id == folder_id
+
+
+def test_a_new_filename_starts_unfiled(registry):
+    folder_id = registry.create_folder("Acme Corp")
+    registry.add("a", "nda.pdf")
+    registry.set_folder("a", folder_id)
+
+    registry.add("b", "different.pdf")
+
+    assert registry.get("b").folder_id is None
