@@ -190,3 +190,57 @@ def test_write_many_is_atomic(registry):
         ])
 
     assert registry.get("a").filename == "one.pdf"
+
+
+def test_folders_round_trip(registry):
+    folder_id = registry.create_folder("Acme Corp")
+
+    folders = registry.folders()
+
+    assert [f.name for f in folders] == ["Acme Corp"]
+    assert folders[0].folder_id == folder_id
+
+
+def test_folders_are_listed_alphabetically(registry):
+    for name in ("Zeta", "alpha", "Mid"):
+        registry.create_folder(name)
+
+    assert [f.name for f in registry.folders()] == ["alpha", "Mid", "Zeta"]
+
+
+def test_moving_a_document_sets_its_folder(registry):
+    registry.add("a", "nda.pdf")
+    folder_id = registry.create_folder("Acme Corp")
+
+    registry.set_folder("a", folder_id)
+    assert registry.get("a").folder_id == folder_id
+
+    registry.set_folder("a", None)
+    assert registry.get("a").folder_id is None
+
+
+def test_renaming_keeps_the_id_and_the_documents(registry):
+    """Identity is the id, so a rename cannot orphan anything."""
+    folder_id = registry.create_folder("Acme Corp")
+    registry.add("a", "nda.pdf")
+    registry.set_folder("a", folder_id)
+
+    registry.rename_folder(folder_id, "Acme Corporation")
+
+    assert [f.name for f in registry.folders()] == ["Acme Corporation"]
+    assert registry.get("a").folder_id == folder_id
+
+
+def test_deleting_a_folder_returns_its_documents_to_unfiled(registry):
+    """Deleting a folder is filing, never data loss."""
+    folder_id = registry.create_folder("Acme Corp")
+    for doc_id in ("a", "b"):
+        registry.add(doc_id, f"{doc_id}.pdf")
+        registry.set_folder(doc_id, folder_id)
+
+    registry.delete_folder(folder_id)
+
+    assert registry.folders() == []
+    assert registry.get("a").folder_id is None
+    assert registry.get("b").folder_id is None
+    assert registry.get("a").filename == "a.pdf"

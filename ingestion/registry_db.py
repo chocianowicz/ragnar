@@ -1,9 +1,10 @@
 import sqlite3
 import threading
+import uuid
 import time
 from pathlib import Path
 
-from core.models import Document, IngestStatus
+from core.models import Document, Folder, IngestStatus
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS documents (
@@ -130,6 +131,50 @@ class Registry:
             "INSERT OR IGNORE INTO documents (doc_id, filename, status, bytes) "
             "VALUES (?, ?, ?, ?)",
             (doc_id, filename, IngestStatus.QUEUED.value, size_bytes),
+        )
+
+    def folders(self) -> list[Folder]:
+        """Every folder, by name, case-insensitively."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM folders ORDER BY name COLLATE NOCASE"
+            ).fetchall()
+        return [Folder(folder_id=r["folder_id"], name=r["name"],
+                       created_at=r["created_at"]) for r in rows]
+
+    def create_folder(self, name: str) -> str:
+        """Insert a folder and return its id.
+
+        The name is validated by ui.folders.validate_name before this is
+        called; the UNIQUE constraint here is the backstop, not the error
+        path.
+        """
+        folder_id = str(uuid.uuid4())
+        self._write(
+            "INSERT INTO folders (folder_id, name, created_at) "
+            "VALUES (?, ?, ?)",
+            (folder_id, name, time.time()),
+        )
+        return folder_id
+
+    def rename_folder(self, folder_id: str, name: str) -> None:
+        self._write(
+            "UPDATE folders SET name = ? WHERE folder_id = ?",
+            (name, folder_id),
+        )
+
+    def delete_folder(self, folder_id: str) -> None:
+        """Drop the folder; its documents fall back to Unfiled."""
+        self._write_many([
+            ("UPDATE documents SET folder_id = NULL WHERE folder_id = ?",
+             (folder_id,)),
+            ("DELETE FROM folders WHERE folder_id = ?", (folder_id,)),
+        ])
+
+    def set_folder(self, doc_id: str, folder_id: str | None) -> None:
+        self._write(
+            "UPDATE documents SET folder_id = ? WHERE doc_id = ?",
+            (folder_id, doc_id),
         )
 
     def get(self, doc_id: str) -> Document | None:
