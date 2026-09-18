@@ -80,3 +80,7 @@ class SavedChat:
     messages: list[dict]
     created_at: float
     updated_at: float
+    # Which folders and documents the conversation was asked under. None
+    # means everything - a chat saved before scopes existed, or one asked
+    # with nothing filtered.
+    scope: dict | None = None

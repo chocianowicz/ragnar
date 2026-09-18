@@ -1,3 +1,4 @@
+import sqlite3
 import time
 
 import pytest
@@ -83,3 +84,61 @@ def test_long_title_is_truncated_with_ellipsis():
 def test_title_placeholder_when_no_user_message():
     assert chat_title([]) == "New chat"
     assert chat_title([{"role": "assistant", "content": "hi"}]) == "New chat"
+
+
+def test_scope_is_added_to_a_database_from_before_the_column(tmp_path):
+    path = tmp_path / "chats.db"
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        "CREATE TABLE chats ("
+        " chat_id TEXT PRIMARY KEY, title TEXT NOT NULL,"
+        " messages TEXT NOT NULL, created_at REAL NOT NULL,"
+        " updated_at REAL NOT NULL);"
+    )
+    conn.execute(
+        "INSERT INTO chats VALUES (?, ?, ?, ?, ?)",
+        ("old", "Prior chat", "[]", 1.0, 1.0),
+    )
+    conn.commit()
+    conn.close()
+
+    store = ChatStore(path)
+
+    # A chat saved before this feature has no scope, which restores as
+    # everything rather than as nothing.
+    assert store.get("old").scope is None
+
+
+def test_a_scope_round_trips(tmp_path):
+    store = ChatStore(tmp_path / "chats.db")
+    scope = {"v": 1, "folders": ["9f2c"], "docs": ["a1b2"]}
+
+    store.save("c1", "Acme", [], scope=scope)
+
+    assert store.get("c1").scope == scope
+
+
+def test_saving_without_a_scope_keeps_the_stored_one(tmp_path):
+    """commit() lands an answer for a chat that may not be on screen.
+
+    It must not overwrite that chat's saved scope with whatever the
+    visible conversation happens to be scoped to.
+    """
+    store = ChatStore(tmp_path / "chats.db")
+    scope = {"v": 1, "folders": ["9f2c"], "docs": []}
+    store.save("c1", "Acme", [], scope=scope)
+
+    store.save("c1", "Acme", [{"role": "user", "content": "hi"}])
+
+    assert store.get("c1").scope == scope
+    assert len(store.get("c1").messages) == 1
+
+
+def test_an_explicit_none_scope_clears_it(tmp_path):
+    """None is a real value - search everything - not "leave it alone"."""
+    store = ChatStore(tmp_path / "chats.db")
+    store.save("c1", "Acme", [], scope={"v": 1, "folders": ["x"], "docs": []})
+
+    store.save("c1", "Acme", [], scope=None)
+
+    assert store.get("c1").scope is None
