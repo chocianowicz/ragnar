@@ -5,7 +5,7 @@ import streamlit as st
 
 from generation.answering import Settings, answer as run_answer
 from history.chat_store import chat_title
-from ui import folders
+from ui import folders, selection
 from ui.services import build_services
 from ui.jobs import JobRegistry, new_chat_id
 from ui.chat import render_transcript
@@ -147,10 +147,10 @@ all_docs = svc["registry"].all()
 if not all_docs:
     st.info("No documents indexed yet. Upload one to get started.")
 
-selected_doc_ids = [
-    d.doc_id for d in all_docs
-    if st.session_state.get(f"sel_{d.doc_id}", True)
-]
+# Read through the selection store, not the checkbox keys: a folded
+# folder renders no checkboxes and Streamlit drops their keys, so reading
+# those directly would silently re-include what the user unticked.
+selected_doc_ids = sorted(selection.selected_ids(all_docs))
 # None = unfiltered search (identical to today's behavior) whenever
 # everything happens to be selected; only pass an explicit filter — which
 # may be an empty list, correctly refusing — for a genuine subset.

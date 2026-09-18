@@ -1,6 +1,6 @@
 import streamlit as st
 
-from ui import folders
+from ui import folders, selection
 
 
 def render(svc, jobs=None) -> None:
@@ -42,8 +42,8 @@ def render(svc, jobs=None) -> None:
                     docs = svc["registry"].all()
                     ticked = folders.selection_from_scope(chat.scope, docs)
                     for doc in docs:
-                        st.session_state[f"sel_{doc.doc_id}"] = (
-                            doc.doc_id in ticked)
+                        selection.set_selected(doc.doc_id,
+                                               doc.doc_id in ticked)
                     st.rerun()
             with col_del:
                 with st.container(key=f"del_chat_container_{chat.chat_id}"):

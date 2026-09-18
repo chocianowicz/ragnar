@@ -1,7 +1,7 @@
 import streamlit as st
 
 from ui.services import format_eta
-from ui import folders, sources
+from ui import folders, selection, sources
 
 STATUS_ICONS = {"queued": "⏳", "processing": "⚙️", "done": "✅", "failed": "❌"}
 
@@ -101,7 +101,7 @@ def _status_strip_body(svc) -> None:
     def _select_all_changed():
         value = st.session_state.get("select_all_docs", True)
         for d in docs:
-            st.session_state[f"sel_{d.doc_id}"] = value
+            selection.set_selected(d.doc_id, value)
 
     if docs:
         st.checkbox("Select all", value=True, key="select_all_docs",
@@ -111,10 +111,7 @@ def _status_strip_body(svc) -> None:
             "only checked ones are searched."
         )
 
-    checked_ids = {
-        d.doc_id for d in docs
-        if st.session_state.get(f"sel_{d.doc_id}", True)
-    }
+    checked_ids = selection.selected_ids(docs)
     for folder_id, label, group in folders.group_for_display(docs,
                                                              all_folders):
         _render_folder(svc, folder_id, label, group, checked_ids, all_folders)
@@ -130,7 +127,7 @@ def _render_folder(svc, folder_id, label, group, checked_ids,
     def _folder_changed(folder_id=folder_id, group=group):
         value = st.session_state.get(f"folder_sel_{folder_id}", True)
         for d in group:
-            st.session_state[f"sel_{d.doc_id}"] = value
+            selection.set_selected(d.doc_id, value)
 
     # Streamlit ignores value= once a widget's key is in session state, so
     # a derived checkbox has to be written INTO session state before it
@@ -138,13 +135,29 @@ def _render_folder(svc, folder_id, label, group, checked_ids,
     # first while the count moves beneath it.
     st.session_state[f"folder_sel_{folder_id}"] = is_checked
 
-    col_check, col_name, col_count, col_menu = st.columns([0.6, 3.6, 0.8, 1])
+    # Folders exist because the list got long, so each one can be folded
+    # away. Open by default: a panel that hides everything on first sight
+    # is worse than a long one. The state is per session, not stored.
+    open_key = f"folder_open_{folder_id}"
+    is_open = st.session_state.setdefault(open_key, True)
+
+    col_fold, col_check, col_name, col_count, col_menu = st.columns(
+        [0.45, 0.5, 3.0, 0.8, 1])
+    with col_fold:
+        with st.container(key=f"fold_container_{folder_id}"):
+            if st.button("▾" if is_open else "▸", key=f"fold_{folder_id}",
+                         help=("Hide these documents" if is_open
+                               else f"Show {len(group)} document(s)")):
+                st.session_state[open_key] = not is_open
+                st.rerun()
     with col_check:
         st.checkbox(f"Include {label}", key=f"folder_sel_{folder_id}",
                     on_change=_folder_changed, label_visibility="collapsed")
     with col_name:
         st.markdown(f"**{label}**")
     with col_count:
+        # The count is what a folded folder says about itself, so it earns
+        # its place most when the documents are hidden.
         st.caption(count)
     with col_menu:
         # Unfiled is the absence of a folder, not a row: there is nothing
@@ -152,6 +165,8 @@ def _render_folder(svc, folder_id, label, group, checked_ids,
         if folder_id != folders.UNFILED:
             _folder_menu(svc, folder_id, label, group, all_folders)
 
+    if not is_open:
+        return
     if not group:
         st.caption("&nbsp;&nbsp;&nbsp;&nbsp;*empty*", unsafe_allow_html=True)
     for doc in group:
@@ -227,9 +242,15 @@ def _render_document(svc, doc, all_folders) -> None:
 
     col_check, col_view, col_menu = st.columns([0.6, 4.4, 1])
     with col_check:
-        st.checkbox(f"Include {doc.filename}", value=True,
+        # value= seeds the widget only on the run that creates it, which
+        # is exactly what is needed when a folded folder is opened again
+        # and the key is gone. remember() then syncs the store from the
+        # widget, so a click here is what survives.
+        st.checkbox(f"Include {doc.filename}",
+                    value=selection.is_selected(doc.doc_id),
                     key=f"sel_{doc.doc_id}",
                     label_visibility="collapsed")
+        selection.remember(doc.doc_id)
     with col_view:
         if st.button(f"{icon} {doc.filename}", key=f"view_{doc.doc_id}",
                      use_container_width=True):
