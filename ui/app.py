@@ -5,6 +5,7 @@ import streamlit as st
 
 from generation.answering import Settings, answer as run_answer
 from history.chat_store import chat_title
+from ui import folders
 from ui.services import build_services
 from ui.jobs import JobRegistry, new_chat_id
 from ui.chat import render_transcript
@@ -176,7 +177,9 @@ if question := st.chat_input("Ask about your documents",
     # from a running question leaves it findable by nothing.
     svc["chats"].save(st.session_state.current_chat_id,
                       chat_title(st.session_state.messages),
-                      st.session_state.messages)
+                      st.session_state.messages,
+                      scope=folders.scope_from_selection(
+                          all_docs, set(selected_doc_ids)))
     settings = Settings(
         model=query["model"], temperature=query["temperature"],
         floor=query["floor"], candidates=query["candidates"],

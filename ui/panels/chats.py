@@ -1,5 +1,7 @@
 import streamlit as st
 
+from ui import folders
+
 
 def render(svc, jobs=None) -> None:
     with st.expander("Chats", expanded=False):
@@ -32,6 +34,16 @@ def render(svc, jobs=None) -> None:
                              use_container_width=True):
                     st.session_state.messages = chat.messages
                     st.session_state.current_chat_id = chat.chat_id
+                    # Restore the folders this conversation was asked
+                    # under. Resolved against the documents that exist
+                    # now, so a folder picks up what was added to it
+                    # since — and an empty scope stays empty, which is a
+                    # refusal rather than a licence to search everything.
+                    docs = svc["registry"].all()
+                    ticked = folders.selection_from_scope(chat.scope, docs)
+                    for doc in docs:
+                        st.session_state[f"sel_{doc.doc_id}"] = (
+                            doc.doc_id in ticked)
                     st.rerun()
             with col_del:
                 with st.container(key=f"del_chat_container_{chat.chat_id}"):
