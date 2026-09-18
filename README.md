@@ -70,8 +70,9 @@ A browser tab at `localhost:8501`. One chat, three collapsed panels, nothing els
 ```
 
 **Documents** takes the upload and shows what has been ingested. **Chats** keeps past
-conversations. **Settings** exposes the knobs that are worth turning — model,
-temperature, reranker, similarity floor, chunk size.
+conversations. **Settings** holds the two choices worth making per question — which
+model answers, and how sure it has to be — with everything else behind an advanced
+toggle.
 
 Ingestion runs in the background with an estimated time remaining, so a slow scan of a
 200-page PDF doesn't block the chat you're already having.
@@ -149,7 +150,8 @@ data/
 ├── originals/        ← the file as you gave it
 ├── converted/        ← Docling output, cached by content hash
 ├── registry.db       ← what has been ingested, and how it went
-└── chats.db          ← past conversations
+├── chats.db          ← past conversations
+└── settings.json     ← what this instance has tuned, layered over config.yaml
 
 qdrant_storage        ← a Docker volume holding the vectors
 ```
@@ -184,21 +186,38 @@ SIGKILL the app, and without that line it stays dead until you notice — but a 
 
 ## Settings
 
-The panel exposes what is worth changing per question; `config.yaml` holds the defaults.
+Two controls are in the panel itself, because they are the two things worth deciding
+per question:
 
 | Setting | Default | What it changes |
 |---|---|---|
-| Model | `qwen2.5:14b` | Which local model writes the answer |
-| Temperature | low | Higher wanders further from the excerpts |
-| Reranker | on | Off is faster and noticeably less precise |
-| Similarity floor | `0.55` | Below this, refuse instead of answering |
-| Chunk size | 500 tokens | Target size per chunk, 50-token overlap |
-| Table rows per group | 20 | Rows per table chunk, header repeated in each |
+| Answer model | `qwen2.5:14b` | Which local model writes the answer |
+| Strictness | Balanced (`0.55`) | How sure the app must be before it answers at all |
 
-The floor is the one to understand before touching. It is a **stopgap, not a
-calibration**: on a real corpus, out-of-corpus questions scored 0.50–0.503 and relevant
-ones 0.578 and up, so 0.55 sits in the gap with margin either side. That is five data
-points, not a golden set. Lower it and refusals turn into confident guesses.
+Everything else is a deployment choice — set once, then left — and lives behind
+**Show advanced settings**:
+
+| Setting | Default | What it changes |
+|---|---|---|
+| Re-rank results | on | Off is faster, less precise, and **disables the relevance floor** |
+| Candidates considered | 25 | Passages fetched before re-ranking picks the best few. Only shown when re-ranking is on: without it the top few are kept as the search ranked them and the pool is never used |
+| Temperature | 0 | Higher wanders further from the excerpts |
+| Rephrase the question | on | Searches several rewordings *beside* your own wording, and searches again if the first pass is thin. One or two extra model calls |
+| Remember context | on | Resolves what a follow-up refers to before searching. One model call per follow-up |
+| Check the draft answer | off | Drafts, judges whether the excerpts support it, searches again if not. Two model calls, and no golden-set evidence yet that it helps |
+| Chunk size | 500 tokens | Target size per chunk, 50-token overlap |
+| Table rows per chunk | 20 | Rows per table chunk, header repeated in each |
+
+Your question is always searched as you asked it. The rephrasing stage adds alternative
+phrasings alongside it and fuses the results, never substituting for it — the lexical
+half of hybrid search matches on your own identifiers, so replacing your wording could
+only lose documents.
+
+Strictness is the one to understand before touching. Its three stops are **provisional,
+not calibrated**: on a real corpus, out-of-corpus questions scored 0.50–0.503 and
+relevant ones 0.578 and up, so Balanced at 0.55 sits in that gap with margin either
+side. That is five data points, not a golden set. Lenient turns refusals into confident
+guesses.
 
 ---
 
@@ -240,6 +259,12 @@ points, not a golden set. Lower it and refusals turn into confident guesses.
 | `retrieval.candidates` | `25` | Fetched before reranking |
 | `retrieval.top_k` | `5` | Kept after reranking |
 | `retrieval.score_floor` | `0.55` | Below this, refuse |
+| `agentic.max_hops` | `2` | Extra searches when a first pass comes back thin |
+| `agentic.variants` | `3` | Alternative phrasings searched beside the original |
+
+Which of the extra stages run is *not* configured here — those are per-instance choices
+made in Settings and stored in `data/settings.json`, next to the instance's data rather
+than in the repo.
 
 Environment (`.env`):
 
