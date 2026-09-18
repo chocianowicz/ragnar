@@ -41,7 +41,7 @@ Expected: `331 passed, 30 skipped`. If it is not green, stop and say so.
 | `tests/test_registry.py` | folder CRUD and migration | Modify |
 | `tests/test_chat_store.py` | scope column and round-trip | Modify |
 
-Tasks 1-7 are pure data and logic, each independently testable. Tasks 8-10 are Streamlit wiring and are not unit-testable; they are verified by hand at the end.
+Tasks 1-8 are pure data and logic, each independently testable and committed with the suite green. Tasks 9-11 are Streamlit wiring and are not unit-testable; they are verified by hand. Task 12 is the README.
 
 ---
 
@@ -209,8 +209,13 @@ Note the `executescript` in `__init__` runs `SCHEMA`, so the `folders` table is 
 
 - [ ] **Step 4: Run the tests**
 
-Run: `docker compose exec -T app python -m pytest tests/test_registry.py -q`
-Expected: PASS (`folders()` is still missing — add the stub in Task 3; if the first test fails only on `registry.folders()`, proceed to Task 3 and re-run both together).
+Run: `docker compose exec -T app python -m pytest tests/test_registry.py -q -k write_many`
+Expected: PASS.
+
+The migration test still fails on `registry.folders()`, which Task 3 adds.
+To keep this task committable green, **leave that test's last line
+(`assert registry.folders() == []`) out until Task 3**, where you add it
+back. Everything else in it passes now.
 
 - [ ] **Step 5: Commit**
 
@@ -625,10 +630,7 @@ Create `tests/test_folders.py`:
 import pytest
 
 from core.models import Document, Folder
-from ui.folders import (
-    UNFILED, FolderNameError, validate_name, folder_state,
-    scope_from_selection, selection_from_scope,
-)
+from ui.folders import UNFILED, FolderNameError, validate_name
 
 
 def _folders(*names):
@@ -735,7 +737,12 @@ def validate_name(name: str, existing: list[Folder],
 - [ ] **Step 4: Run the tests**
 
 Run: `docker compose exec -T app python -m pytest tests/test_folders.py -q`
-Expected: PASS (the imports of `folder_state` and the scope helpers still fail — write them in Tasks 7 and 8 before re-running the whole file, or comment them out of the import until then).
+Expected: PASS, all of them.
+
+The import at the top names only what exists. Each later task adds its own
+names to it as it adds the functions — a module-level import of something
+not yet written is a **collection error**, which fails the whole file
+before `-k` can filter anything, so the task could not be committed green.
 
 - [ ] **Step 5: Commit**
 
@@ -752,7 +759,14 @@ git commit -m "feat: folder name rules, with Unfiled reserved"
 - Modify: `ui/folders.py`
 - Test: `tests/test_folders.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Extend the import, then write the failing tests**
+
+Add `folder_state` to the `ui.folders` import at the top of
+`tests/test_folders.py`:
+
+```python
+from ui.folders import UNFILED, FolderNameError, validate_name, folder_state
+```
 
 ```python
 def _docs(*specs):
@@ -826,7 +840,14 @@ git commit -m "feat: a folder's checkbox state and count"
 
 This is the task the spec is most careful about. Read its "Saved scope" section before writing code.
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Extend the import, then write the failing tests**
+
+```python
+from ui.folders import (
+    UNFILED, FolderNameError, validate_name, folder_state,
+    scope_from_selection, selection_from_scope,
+)
+```
 
 ```python
 def test_everything_checked_saves_as_all():
@@ -986,7 +1007,10 @@ No unit tests: this is Streamlit rendering. It is verified by hand in Task 11.
 
 - [ ] **Step 1: Group the document list by folder**
 
-Replace the document loop in `_status_strip_body`. Keep the existing upload, ETA and viewer code untouched.
+**First**, add `from ui import folders` to the imports at the top of
+`ui/panels/documents.py` — every step below uses it.
+
+Then replace the document loop in `_status_strip_body`. Keep the existing upload, ETA and viewer code untouched.
 
 ```python
     docs = svc["registry"].all()
@@ -1036,7 +1060,8 @@ def group_for_display(docs: list[Document],
     return rows
 ```
 
-Add a test for it in `tests/test_folders.py`:
+Add `group_for_display` to the `ui.folders` import at the top of
+`tests/test_folders.py`, then add its tests:
 
 ```python
 def test_unfiled_is_drawn_last():
@@ -1065,9 +1090,16 @@ def _render_folder(svc, folder_id, label, group, checked_ids,
         for d in group:
             st.session_state[f"sel_{d.doc_id}"] = value
 
+    # Streamlit ignores value= once a widget's key exists in session
+    # state, so a derived checkbox has to be written INTO session state
+    # before it renders. Without this the folder box freezes at whatever
+    # it showed on the first render while the count moves beneath it —
+    # untick a document and the folder still looks fully checked.
+    st.session_state[f"folder_sel_{folder_id}"] = is_checked
+
     col_check, col_name, col_count = st.columns([0.6, 4.4, 1])
     with col_check:
-        st.checkbox(f"Include {label}", value=is_checked,
+        st.checkbox(f"Include {label}",
                    key=f"folder_sel_{folder_id}",
                    on_change=_folder_changed,
                    label_visibility="collapsed")
@@ -1100,8 +1132,15 @@ def _render_document(svc, doc, all_folders) -> None:
     with col_folder:
         _folder_picker(svc, doc, all_folders)
     with col_remove:
-        ...  # unchanged from today
+        ...  # the ✕ button, unchanged from today
 ```
+
+Then, at the **function's top level** — not inside any `with col_...`
+block — come the two trailing blocks moved verbatim from today's loop
+(`ui/panels/documents.py:139-154`): the `if doc.error:` row with its retry
+button, and the `if doc.status.value == "done" and st.session_state.get(...)`
+call to `_render_viewer`. They sit outside the columns today and must stay
+outside them, or the viewer renders squeezed into a narrow column.
 
 The picker, which is how a document is filed:
 
@@ -1133,8 +1172,6 @@ def _folder_picker(svc, doc, all_folders) -> None:
     svc["registry"].set_folder(doc.doc_id, target)
     st.rerun()
 ```
-
-Add `from ui import folders` to the imports.
 
 - [ ] **Step 4: Check it renders**
 
@@ -1204,6 +1241,7 @@ def _render_folder_controls(svc, all_folders) -> None:
             except folders.FolderNameError as exc:
                 st.error(str(exc))
             else:
+                _forget_pickers()
                 st.rerun()
     with cols[1]:
         held = sum(1 for d in svc["registry"].all()
@@ -1211,11 +1249,32 @@ def _render_folder_controls(svc, all_folders) -> None:
         if st.button("Delete", use_container_width=True,
                      help=f"{held} document(s) move to Unfiled"):
             svc["registry"].delete_folder(target.folder_id)
+            _forget_pickers()
             st.rerun()
 ```
 
 Delete needs no confirmation: the spec makes it non-destructive, and the
 help text says where the documents go.
+
+Both handlers call this first:
+
+```python
+def _forget_pickers() -> None:
+    """Drop every row picker's remembered value.
+
+    A selectbox with a key redisplays its stored VALUE, not its index, and
+    Streamlit validates that value against the current options. Renaming or
+    deleting a folder changes the options, so a picker still holding the
+    old name would raise or silently snap to the wrong entry. Clearing the
+    keys makes every picker re-derive from the document's folder_id, which
+    is the truth.
+    """
+    for key in [k for k in st.session_state if k.startswith("folder_of_")]:
+        del st.session_state[key]
+```
+
+Iterate over a copied list of the keys: deleting from `st.session_state`
+while iterating it raises.
 
 Call it at the end of `_status_strip_body`:
 
