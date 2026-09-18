@@ -79,6 +79,47 @@ Ingestion runs in the background with an estimated time remaining, so a slow sca
 
 ---
 
+## Folders
+
+A flat list of documents works at ten and stops working at fifty. Folders group them —
+one per client, project or topic — and answer the question a large corpus raises: *only
+look in here.*
+
+```
+☑ Select all
+
+▾ ☐ Acme Corp                                  3/12
+    ☑ ✅ nda.pdf              [ Acme Corp ▾ ]   ✕
+    ☑ ✅ sow.pdf              [ Acme Corp ▾ ]   ✕
+    ☐ ✅ invoice.xlsx         [ Acme Corp ▾ ]   ✕
+▸ ☑ Northwind Ltd                             12/12
+▸ ☑ Unfiled                                   32/32
+```
+
+The checkbox you already know, at three levels: **Select all**, then a folder, then a
+document. Ticking a folder ticks everything in it, and only ticked documents are
+searched. Streamlit has no half-filled checkbox, so a partly-ticked folder reads as
+unchecked and the `3/12` count carries the real state.
+
+A document is filed with the picker on its own row. The tick and the picker do
+different jobs on purpose: the tick means *search this*, and giving it a second meaning
+would make filing a document silently narrow the next answer.
+
+**A chat remembers what it was scoped to.** Ask about Acme with only Acme ticked, come
+back tomorrow, and reopening that conversation restores that scope. Folders are stored
+by identity rather than by name, so renaming one changes nothing, and a document added
+to Acme after the chat was saved comes back ticked with the rest.
+
+**Nothing here can lose a document.** Deleting a folder returns its documents to
+Unfiled; the ✕ on a row is still the only thing that removes one. `Unfiled` is not a
+folder but the absence of one, which is why the name is reserved.
+
+Re-uploading a corrected file keeps its folder. A document's id is a hash of its
+contents, so fixing a typo produces a new, unrelated document — it inherits the folder
+of the file it replaces rather than quietly landing in Unfiled.
+
+---
+
 ## Why refusing is the feature
 
 Most document chatbots will answer anything. Ask about a contract clause that isn't in
