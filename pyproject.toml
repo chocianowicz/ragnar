@@ -31,3 +31,11 @@ testpaths = ["tests"]
 markers = [
     "integration: requires Ollama and/or Qdrant running",
 ]
+# Both of these are raised inside Docling on fields we never set: it
+# serializes its own options (firing the deprecated `force_full_page_ocr`
+# computed field) and reads `generate_table_images` in its pipeline setup.
+# Ignored narrowly by message so a deprecation in our own code still shows.
+filterwarnings = [
+    "ignore:`force_full_page_ocr` is deprecated:DeprecationWarning",
+    "ignore:This field is deprecated. Use `generate_page_images=True`:DeprecationWarning",
+]
