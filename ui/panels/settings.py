@@ -115,6 +115,7 @@ def render(svc) -> dict:
         thorough = bool(prefs.get("thorough", True))
         follow_up = bool(prefs.get("follow_up", True))
         self_correct = bool(prefs.get("self_correct", False))
+        broaden = bool(prefs.get("broaden", True))
 
         if admin:
             st.markdown("**Retrieval**")
@@ -191,8 +192,11 @@ def render(svc) -> dict:
                      "nothing on the first question of a chat.\n\nResolves "
                      "what a follow-up refers to before searching, so \"and "
                      "the base year for that?\" searches for the thing you "
-                     "were discussing rather than the words you typed. The "
-                     "answer sees the recent conversation either way.",
+                     "were discussing rather than the words you typed, and "
+                     "lets the answer see the recent conversation. Off, "
+                     "every question is answered on its own: the model sees "
+                     "no earlier messages, and nothing said in the chat can "
+                     "be used as a link for an indirect answer.",
             )
             prefs.set("follow_up", bool(follow_up))
             self_correct = st.checkbox(
@@ -204,6 +208,17 @@ def render(svc) -> dict:
                      "again if not.",
             )
             prefs.set("self_correct", bool(self_correct))
+            broaden = st.checkbox(
+                "Answer through a broader subject", value=broaden,
+                help="On by default. Costs nothing on a question the "
+                     "documents answer, and one model call plus one or two "
+                     "searches on one they do not.\n\nWhen nothing is found "
+                     "for, say, Poland, tries the EU instead, but only if "
+                     "this chat or the documents establish that Poland is in "
+                     "the EU. The answer says it is indirect, and the trace "
+                     "marks a link that came from the chat.",
+            )
+            prefs.set("broaden", bool(broaden))
 
             _render_ingestion(svc, cfg, prefs)
             _render_diagnostics(svc, cfg)
@@ -219,7 +234,7 @@ def render(svc) -> dict:
         # evidence either way. The stored pref key stays "thorough" so
         # the rename does not reset anyone's saved choice.
         "multi_query": thorough, "multi_hop": thorough,
-        "self_correct": self_correct,
+        "self_correct": self_correct, "broaden": broaden,
     }
 
 

@@ -109,6 +109,8 @@ def render_trace(trace, key: str) -> None:
             # markup into the page.
             st.text(trace["resolved_question"])
 
+        _render_indirect(trace)
+
         agentic = trace.get("agentic")
         if agentic:
             st.divider()
@@ -131,11 +133,47 @@ def render_trace(trace, key: str) -> None:
                 st.caption(f"⚠ {note}")
 
 
+def _render_indirect(trace: dict) -> None:
+    """How an answer reached through a broader subject was connected.
+
+    The link is the one thing in such an answer that may not come from the
+    documents, so where it came from is stated every time, and a link that
+    rests on the chat alone is marked as such.
+    """
+    indirect = trace.get("indirect")
+    if not indirect:
+        if trace.get("broader_attempt"):
+            st.caption("Also tried a broader subject: "
+                       + trace["broader_attempt"])
+        return
+
+    st.divider()
+    st.markdown("**Answered through a broader subject.** Nothing in the "
+                "documents addresses the question directly.")
+    # st.text throughout: model output, which must not inject markup.
+    st.caption("Searched instead for:")
+    st.text(indirect.get("broader_question", ""))
+    st.caption("Link used:")
+    st.text(indirect.get("link", ""))
+    if indirect.get("source") == "conversation":
+        who = "you" if indirect.get("speaker") == "user" else "RAGnar"
+        st.caption(f"⚠ This link comes from this chat, not from the "
+                   f"documents. Earlier, {who} said:")
+        st.text(f"“{indirect.get('quote', '')}”")
+    else:
+        labels = indirect.get("link_citations") or []
+        st.caption("Link found in the documents"
+                   + (f": {', '.join(labels)}" if labels else "."))
+
+
 def render_transcript(messages: list[dict]) -> None:
     """Replay the conversation so far."""
     for turn, message in enumerate(messages):
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
+            if (message.get("trace") or {}).get("indirect"):
+                st.caption("↳ Indirect answer, through a broader subject. "
+                           "See “How this answer was found”.")
             if message.get("citations"):
                 st.caption("Sources")
                 render_sources(message["citations"])

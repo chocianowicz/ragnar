@@ -185,7 +185,8 @@ if question := st.chat_input("Ask about your documents",
         floor=query["floor"], candidates=query["candidates"],
         use_reranker=query["use_reranker"], follow_up=query["follow_up"],
         multi_query=query["multi_query"],
-        multi_hop=query["multi_hop"], self_correct=query["self_correct"])
+        multi_hop=query["multi_hop"], self_correct=query["self_correct"],
+        broaden=query["broaden"])
 
     jobs.start(
         st.session_state.current_chat_id,

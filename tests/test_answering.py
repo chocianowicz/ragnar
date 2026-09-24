@@ -127,14 +127,29 @@ def test_a_short_answer_is_not_swallowed_by_the_decision_buffer():
     assert job.text == "Yes."
 
 
-def test_history_reaches_the_answerer():
+def test_history_reaches_the_answerer_when_context_is_remembered():
     job = StubJob()
     history = [{"role": "user", "content": "earlier"}]
     answerer = StubAnswerer(["ok"])
 
-    _run(job, history=history, answerer=answerer)
+    _run(job, history=history, answerer=answerer,
+         settings=_settings(follow_up=True))
 
     assert answerer.histories[0] == history
+
+
+def test_without_remember_context_the_answer_sees_no_chat():
+    """The checkbox governs every use of the conversation, not only the
+    follow-up rewrite: off means each question stands alone."""
+    job = StubJob()
+    answerer = StubAnswerer(["ok"])
+    llm = ScriptedLLM()
+
+    _run(job, history=[{"role": "user", "content": "Poland is in the EU."}],
+         answerer=answerer, llm=llm, settings=_settings(follow_up=False))
+
+    assert answerer.histories[0] == []
+    assert llm.calls == []                   # no follow-up rewrite either
 
 
 def test_a_follow_up_is_resolved_before_searching():

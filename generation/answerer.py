@@ -4,7 +4,10 @@ from enum import Enum
 from core.models import SearchResult
 from generation import injection
 from generation.guards import should_refuse_aggregation
-from generation.prompts import SYSTEM_PROMPT, build_user_prompt, NO_ANSWER
+from generation.prompts import (
+    INDIRECT_SYSTEM, NO_ANSWER, SYSTEM_PROMPT, build_indirect_prompt,
+    build_user_prompt,
+)
 
 # The opening sentence of every refusal. "Nothing relevant" would
 # contradict the near-miss sentence that can follow it — retrieval often
@@ -251,6 +254,26 @@ class Answerer:
         """
         yield from self._llm.stream(
             SYSTEM_PROMPT, build_user_prompt(question, build_excerpts(results)),
+            model=model, temperature=temperature,
+            history=recent_history(history),
+        )
+
+    def stream_indirect(self, question: str, bridge,
+                        results: list[SearchResult], *,
+                        model: str | None = None,
+                        temperature: float | None = None,
+                        history: list[dict] | None = None):
+        """stream(), for an answer reached through a broader subject.
+
+        `bridge` is a generation.broaden.Bridge. Its link passages, when
+        the link came from the documents, go in beside the broader
+        subject's, so the model sees every passage it is cited as using.
+        """
+        excerpts = build_excerpts(list(results) + list(bridge.link_results))
+        yield from self._llm.stream(
+            INDIRECT_SYSTEM,
+            build_indirect_prompt(question, bridge.broader_question,
+                                  bridge.link, bridge.source, excerpts),
             model=model, temperature=temperature,
             history=recent_history(history),
         )
