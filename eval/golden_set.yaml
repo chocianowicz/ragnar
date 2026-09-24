@@ -71,7 +71,7 @@
   expected_sources: ["21 laws of leadership.pdf"]
   out_of_corpus: false
 
-- question: "Who wrote the foreword to this book?"
+- question: "Who wrote the foreword to The 21 Irrefutable Laws of Leadership?"
   expected_answer: "Zig Ziglar"
   expected_sources: ["21 laws of leadership.pdf"]
   out_of_corpus: false
@@ -116,7 +116,7 @@
   expected_sources: ["How to win friends and influence people.pdf"]
   out_of_corpus: false
 
-- question: "How many copies did the book eventually sell?"
+- question: "How many copies did How to Win Friends and Influence People eventually sell?"
   expected_answer: "15 million copies."
   expected_sources: ["How to win friends and influence people.pdf"]
   out_of_corpus: false
@@ -201,7 +201,7 @@
   expected_sources: ["what every body is saying.pdf"]
   out_of_corpus: false
 
-- question: "What is the title of Chapter Three?"
+- question: "What is the title of Chapter Three of What Every Body Is Saying?"
   expected_answer: "Getting a Leg Up on Body Language: Nonverbals of the Feet and Legs."
   expected_sources: ["what every body is saying.pdf"]
   out_of_corpus: false
@@ -285,10 +285,10 @@
   expected_sources: []
   out_of_corpus: true
 
-- question: "What is the author's email address in 'Requirements Engineering Fundamentals'?"
-  expected_answer: ""
-  expected_sources: []
-  out_of_corpus: true
+- question: "What is Klaus Pohl's email address given in Requirements Engineering Fundamentals?"
+  expected_answer: "klaus.pohl@sse.uni-due.de"
+  expected_sources: ["Requirements Engineering Fundamentals.pdf"]
+  out_of_corpus: false
 
 - question: "What is the page count of 'The Professional Product Owner'?"
   expected_answer: ""
@@ -364,76 +364,84 @@
 
 # --- Lux Med refundacja (in-corpus) ---
 
-- question: "Jaki jest adres, na który należy wysłać wypełniony Wniosek wraz z dokumentami?"
+- question: "Jaki jest adres, na który należy wysłać wypełniony wniosek o refundację LUX MED wraz z dokumentami?"
   expected_answer: "LUX MED Sp. z o.o. Al. Jerozolimskie 94 00-807 Warszawa"
   expected_sources: ["Lux Med wniosek refundacja POL.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "Do jakiego momentu wstecz od daty wykonania usługi dokonywany jest zwrot kosztów?"
   expected_answer: "Do 3 miesięcy wstecz od daty wykonania usługi."
   expected_sources: ["Lux Med wniosek refundacja POL.pdf"]
+  private: true
   out_of_corpus: false
 
-- question: "Na podstawie jakich dokumentów dokonywany jest zwrot kosztów?"
+- question: "Na podstawie jakich dokumentów LUX MED dokonuje zwrotu kosztów?"
   expected_answer: "Na podstawie oryginałów faktur VAT lub rachunków wystawionych na osobę fizyczną wraz ze specyfikacją wykonanych świadczeń."
   expected_sources: ["Lux Med wniosek refundacja POL.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "Czy dokonywane są zwroty na podstawie paragonów fiskalnych?"
   expected_answer: "Nie, nie dokonuje się zwrotów na podstawie paragonów fiskalnych."
   expected_sources: ["Lux Med wniosek refundacja POL.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "Jakie dane kontaktowe należy podać w przypadku refundacji usług wykonywanych dla dzieci do lat 18?"
   expected_answer: "Należy podać dane rodzica lub opiekuna, w tym nazwisko, imię, telefon, telefon komórkowy oraz e-mail."
   expected_sources: ["Lux Med wniosek refundacja POL.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "Jakie dopiski należy umieścić na przesyłce z Wnioskem?"
   expected_answer: "Należy umieścić dopisek „Refundacja\"."
   expected_sources: ["Lux Med wniosek refundacja POL.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "W jakim banku znajduje się rachunek osoby ubiegającej się o refundację?"
   expected_answer: "W banku ING."
   expected_sources: ["Lux Med wniosek refundacja POL.pdf"]
+  private: true
   out_of_corpus: false
 
-- question: "Jakie dokumenty należy dołączyć do wniosku w przypadku usług stomatologicznych oraz rehabilitacyjnych?"
+- question: "Jakie dokumenty należy dołączyć do wniosku o refundację LUX MED w przypadku usług stomatologicznych oraz rehabilitacyjnych?"
   expected_answer: "Wymagane jest dołączenie specyfikacji wykonanych usług z cenami jednostkowymi, ilością wykonanej usługi oraz jej nazewnictwem."
   expected_sources: ["Lux Med wniosek refundacja POL.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "Jakie pola we wniosku są oznaczone jako obowiązkowe?"
   expected_answer: "Pola oznaczone gwiazdką (*) są obowiązkowe; w przypadku adresu e-mail lub numeru telefonu wystarczy podanie jednego z nich."
   expected_sources: ["Lux Med wniosek refundacja POL.pdf"]
+  private: true
   out_of_corpus: false
 
 # --- Goldman IKE (in-corpus) ---
 
-- question: "Jaki jest tytuł dokumentu?"
-  expected_answer: "POTWIERDZENIE ZAWARCIA UMOWY O PROWADZENIE INDYWIDUALNEGO KONTA EMERYTALNEGO IKE ING"
-  expected_sources: ["Goldman.b1315a7d.pdf"]
-  out_of_corpus: false
-
 - question: "Na jaki adres należy przesyłać dokumenty związane z wypłatą transferową z IKE lub PPE?"
   expected_answer: "ProService Finteco Sp. z o.o., ul. Konstruktorska 12A, 02-673 Warszawa"
   expected_sources: ["Goldman.b1315a7d.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "Pod jakim numerem telefonu można skontaktować się w przypadku dodatkowych pytań?"
   expected_answer: "801 690 555"
   expected_sources: ["Goldman.b1315a7d.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "W jakie dni tygodnia dostępna jest infolinia?"
   expected_answer: "od poniedziałku do piątku"
   expected_sources: ["Goldman.b1315a7d.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "Kto zarządza i reprezentuje Subfunduszami wydzielonymi w ramach Goldman Sachs SFIO oraz z Goldman Sachs Perspektywa SFIO?"
   expected_answer: "Goldman Sachs Towarzystwo Funduszy Inwestycyjnych S.A."
   expected_sources: ["Goldman.b1315a7d.pdf"]
+  private: true
   out_of_corpus: false
 
 # --- Podatek Zielonki (in-corpus) ---
@@ -441,26 +449,31 @@
 - question: "Jaka jest metoda płatności?"
   expected_answer: "BLIK"
   expected_sources: ["Podatek potwierdzenie zielonki 2026.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "Jaki jest status transakcji?"
   expected_answer: "Udana"
   expected_sources: ["Podatek potwierdzenie zielonki 2026.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "Ile wynosi czwarta rata podatku od nieruchomości?"
   expected_answer: "47,00 zł"
   expected_sources: ["Podatek potwierdzenie zielonki 2026.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "Kto jest odbiorcą płatności?"
   expected_answer: "Gmina Zielonki Krakowskie Przedmieście 116 / - 32-087 Zielonki"
   expected_sources: ["Podatek potwierdzenie zielonki 2026.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "Jaki jest tytuł pierwszego zobowiązania?"
   expected_answer: "Podatek od nieruchomości. Rata 1/2026"
   expected_sources: ["Podatek potwierdzenie zielonki 2026.pdf"]
+  private: true
   out_of_corpus: false
 
 # --- The Professional Product Owner (in-corpus) ---
@@ -475,7 +488,7 @@
   expected_sources: ["The Professional Product Owner.f86fb025.pdf"]
   out_of_corpus: false
 
-- question: "What is the recommended viewing mode to optimize the presentation of programming code or configuration examples in this e-book?"
+- question: "What is the recommended viewing mode to optimize the presentation of programming code or configuration examples in the e-book edition of The Professional Product Owner?"
   expected_answer: "Single-column, landscape mode with the font size adjusted to the smallest setting."
   expected_sources: ["The Professional Product Owner.f86fb025.pdf"]
   out_of_corpus: false
@@ -485,17 +498,17 @@
   expected_sources: ["The Professional Product Owner.f86fb025.pdf"]
   out_of_corpus: false
 
-- question: "What is the ISBN-13 for this book?"
+- question: "What is the ISBN-13 of The Professional Product Owner?"
   expected_answer: "978-0-13-468647-9"
   expected_sources: ["The Professional Product Owner.f86fb025.pdf"]
   out_of_corpus: false
 
-- question: "What is the Library of Congress Control Number for this publication?"
+- question: "What is the Library of Congress Control Number for The Professional Product Owner?"
   expected_answer: "2018934196"
   expected_sources: ["The Professional Product Owner.f86fb025.pdf"]
   out_of_corpus: false
 
-- question: "Who holds the copyright for this book?"
+- question: "Who holds the copyright for The Professional Product Owner?"
   expected_answer: "Scrum.org"
   expected_sources: ["The Professional Product Owner.f86fb025.pdf"]
   out_of_corpus: false
@@ -517,54 +530,64 @@
 
 # --- Projek Dyplomowy (in-corpus) ---
 
-- question: "What is the name of the contest studied in this project?"
+- question: "What is the name of the contest studied in Alexandros Papachristoforou's diploma project?"
   expected_answer: "Eurovision Song Contest"
   expected_sources: ["Projek Dyplomowy Alexandros Papachristoforou.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "What tool is used to visualise discovered voting blocs?"
   expected_answer: "networkx"
   expected_sources: ["Projek Dyplomowy Alexandros Papachristoforou.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "Which organization holds the Eurovision Song Contest annually?"
   expected_answer: "European Broadcasting Union"
   expected_sources: ["Projek Dyplomowy Alexandros Papachristoforou.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "Which country is mentioned as the most recent expansion for Eurovision Song Contest participants?"
   expected_answer: "Australia"
   expected_sources: ["Projek Dyplomowy Alexandros Papachristoforou.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "What is the result of merging Wiki2 with Wiki1?"
   expected_answer: "\"Languages\" database"
   expected_sources: ["Projek Dyplomowy Alexandros Papachristoforou.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "What is the \"Votes\" database purposed for?"
   expected_answer: "Revealing any voting blocs"
   expected_sources: ["Projek Dyplomowy Alexandros Papachristoforou.pdf"]
+  private: true
   out_of_corpus: false
 
-- question: "What tool will the author use to pull together the data?"
+- question: "What tool does Alexandros Papachristoforou's diploma project use to pull together the data?"
   expected_answer: "beautifulsoup"
   expected_sources: ["Projek Dyplomowy Alexandros Papachristoforou.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "What was absent in the Eurovision Song Contest in the past, according to Wiki1?"
   expected_answer: "Qualifying rounds"
   expected_sources: ["Projek Dyplomowy Alexandros Papachristoforou.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "Why does the necessary data need to be derived from multiple sources?"
   expected_answer: "None of the databases available online contain all the relevant information for a proper discovery process."
   expected_sources: ["Projek Dyplomowy Alexandros Papachristoforou.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "What information considered in the datasets may further reveal any voting blocs?"
   expected_answer: "Voting to and from participating countries"
   expected_sources: ["Projek Dyplomowy Alexandros Papachristoforou.pdf"]
+  private: true
   out_of_corpus: false
 
 # --- Ugorek (in-corpus) ---
@@ -572,37 +595,44 @@
 - question: "W jakim okresie czasu obowiązuje ubezpieczenie?"
   expected_answer: "12-11-2023 godz. 00:00 - 11-11-2026 godz 23:59"
   expected_sources: ["Ugorek.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "Jaki jest rok budowy budynku mieszkalnego w miejscu ubezpieczenia?"
   expected_answer: "1965"
   expected_sources: ["Ugorek.pdf"]
+  private: true
   out_of_corpus: false
 
 
 - question: "Jaka jest wysokość składki ogółem?"
   expected_answer: "1 509 zł"
   expected_sources: ["Ugorek.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "W jakiej formie należy opłacać składkę?"
   expected_answer: "przelew"
   expected_sources: ["Ugorek.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "Do kiedy należy opłacić drugą ratę składki?"
   expected_answer: "11-11-2024"
   expected_sources: ["Ugorek.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "Ile wynosi powierzchnia użytkowa ubezpieczonego mieszkania?"
   expected_answer: "45 m 2"
   expected_sources: ["Ugorek.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "Gdzie i kiedy wystawiono polisę?"
   expected_answer: "03-11-2023, 16:02, TARNÓW"
   expected_sources: ["Ugorek.pdf"]
+  private: true
   out_of_corpus: false
 
 # --- Rome flight ticket (in-corpus) ---
@@ -610,31 +640,37 @@
 - question: "What is the arrival time and date for the flight from Krakow to Rome?"
   expected_answer: "12:00 Thu, 01 Oct"
   expected_sources: ["Rome flight ticket.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "What airline operates flight LO 2141?"
   expected_answer: "LOT Polish Airlines"
   expected_sources: ["Rome flight ticket.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "What is the maximum weight allowed for a personal item?"
   expected_answer: "2 KG"
   expected_sources: ["Rome flight ticket.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "How long before departure is independent online registration on the carrier's website usually available?"
   expected_answer: "24 hours before departure"
   expected_sources: ["Rome flight ticket.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "What is the total amount to be paid for the flight and the service?"
   expected_answer: "PLN 548.05"
   expected_sources: ["Rome flight ticket.pdf"]
+  private: true
   out_of_corpus: false
 
 - question: "What is the suggested arrival time at the airport for an international flight?"
   expected_answer: "at least 3 hours before your international flight"
   expected_sources: ["Rome flight ticket.pdf"]
+  private: true
   out_of_corpus: false
 
 # --- Rome flight ticket out-of-corpus: must be refused ---
@@ -671,10 +707,10 @@
   expected_sources: []
   out_of_corpus: true
 
-- question: "What is the publication date of 'The Tipping Point'?"
-  expected_answer: ""
-  expected_sources: []
-  out_of_corpus: true
+- question: "In what year was The Tipping Point first published?"
+  expected_answer: "2000"
+  expected_sources: ["the-tipping-point.pdf"]
+  out_of_corpus: false
 
 - question: "What is the page count of 'Agile Product Management with Scrum'?"
   expected_answer: ""
@@ -711,42 +747,40 @@
   expected_sources: []
   out_of_corpus: true
 
-- question: "What is the publication date of 'Requirements Engineering Fundamentals'?"
-  expected_answer: ""
-  expected_sources: []
-  out_of_corpus: true
+- question: "In what year was the 2nd edition of Requirements Engineering Fundamentals published?"
+  expected_answer: "2015"
+  expected_sources: ["Requirements Engineering Fundamentals.pdf"]
+  out_of_corpus: false
 
-- question: "What is the publication date of 'Agile Product Management with Scrum'?"
-  expected_answer: ""
-  expected_sources: []
-  out_of_corpus: true
+- question: "In what year was Agile Product Management with Scrum published?"
+  expected_answer: "2010"
+  expected_sources: ["SE-Scrum-Agile-Product-Management-with-Scrum-Roman-Pichler-BIN532.pdf"]
+  out_of_corpus: false
 
-- question: "What is the publication date of 'Python Data Analysis'?"
-  expected_answer: ""
-  expected_sources: []
-  out_of_corpus: true
+- question: "When was the first edition of Python Data Analysis published?"
+  expected_answer: "October 2014"
+  expected_sources: ["python data analysis.pdf"]
+  out_of_corpus: false
 
 - question: "What is the publication date of 'What Customers Want'?"
   expected_answer: ""
   expected_sources: []
   out_of_corpus: true
 
-- question: "What is the publication date of 'How to Win Friends and Influence People'?"
-  expected_answer: ""
-  expected_sources: []
-  out_of_corpus: true
+- question: "In what year was How to Win Friends and Influence People first published?"
+  expected_answer: "1937"
+  expected_sources: ["How to win friends and influence people.pdf"]
+  out_of_corpus: false
 
-- question: "What is the publication date of 'What Every Body Is Saying'?"
-  expected_answer: ""
-  expected_sources: []
-  out_of_corpus: true
+- question: "In what year was What Every Body Is Saying published?"
+  expected_answer: "2008"
+  expected_sources: ["what every body is saying.pdf"]
+  out_of_corpus: false
 
-- question: "What is the publication date of 'The 21 Irrefutable Laws of Leadership'?"
-  expected_answer: ""
-  expected_sources: []
-  out_of_corpus: true
-
-# --- Baldur's Gate (in-corpus) ---
+- question: "According to its copyright page, in what year was The 21 Irrefutable Laws of Leadership published?"
+  expected_answer: "1998"
+  expected_sources: ["21 laws of leadership.pdf"]
+  out_of_corpus: false
 
 - question: "Kto przetłumaczył oryginalny tekst poradnika?"
   expected_answer: "Janek Sielicki / Janek Sielicki Publishing."
@@ -810,12 +844,12 @@
   expected_sources: ["Requirements Engineering Fundamentals.pdf"]
   out_of_corpus: false
 
-- question: "Who translated the book from German into English?"
+- question: "Who translated Requirements Engineering Fundamentals from German into English?"
   expected_answer: "Thorsten Weyer, Bastian Tenbergen, and Marta Tayeh."
   expected_sources: ["Requirements Engineering Fundamentals.pdf"]
   out_of_corpus: false
 
-- question: "What curriculum version is the 2nd edition of the book aligned with?"
+- question: "What curriculum version is the 2nd edition of Requirements Engineering Fundamentals aligned with?"
   expected_answer: "Curriculum version 2.2 of the International Requirements Engineering Board e.V. (IREB)."
   expected_sources: ["Requirements Engineering Fundamentals.pdf"]
   out_of_corpus: false
@@ -845,7 +879,7 @@
   expected_sources: ["Requirements Engineering Fundamentals.pdf"]
   out_of_corpus: false
 
-- question: "Who is the publisher of the book and where is it located?"
+- question: "Who is the publisher of Requirements Engineering Fundamentals and where is it located?"
   expected_answer: "Rocky Nook Inc., located at 802 East Cota St., 3rd Floor, Santa Barbara, CA 93103."
   expected_sources: ["Requirements Engineering Fundamentals.pdf"]
   out_of_corpus: false
@@ -866,7 +900,7 @@
   out_of_corpus: false
 
 - question: "In which year and where did Karol Frühauf found INFOGEM AG, and with whom?"
-  expected_answer: "In 1987, with Helmut Sandmayr."
+  expected_answer: "In 1987 in Switzerland, with Helmut Sandmayr."
   expected_sources: ["Requirements Engineering Fundamentals.pdf"]
   out_of_corpus: false
 
@@ -877,12 +911,12 @@
 
 # --- The Tipping Point (in-corpus) ---
 
-- question: "Who is the author of the book?"
+- question: "Who is the author of The Tipping Point?"
   expected_answer: "Malcolm Gladwell"
   expected_sources: ["the-tipping-point.pdf"]
   out_of_corpus: false
 
-- question: "To whom is the book dedicated?"
+- question: "To whom is The Tipping Point dedicated?"
   expected_answer: "Joyce and Graham Gladwell"
   expected_sources: ["the-tipping-point.pdf"]
   out_of_corpus: false
@@ -929,12 +963,12 @@
 
 # --- Customer Relations (in-corpus) ---
 
-- question: "Who holds the copyright for the book?"
+- question: "Who holds the copyright for What Customers Want?"
   expected_answer: "The McGraw-Hill Companies, Inc."
   expected_sources: ["CUSTOMER RELATIONS What customers want.pdf"]
   out_of_corpus: false
 
-- question: "To whom is the book dedicated?"
+- question: "To whom is What Customers Want dedicated?"
   expected_answer: "Lorena and Anthony W. Ulwick Sr."
   expected_sources: ["CUSTOMER RELATIONS What customers want.pdf"]
   out_of_corpus: false
@@ -949,7 +983,7 @@
   expected_sources: ["CUSTOMER RELATIONS What customers want.pdf"]
   out_of_corpus: false
 
-- question: "What is the print version ISBN of the book?"
+- question: "What is the print version ISBN of What Customers Want?"
   expected_answer: "0-07-140867-3"
   expected_sources: ["CUSTOMER RELATIONS What customers want.pdf"]
   out_of_corpus: false
@@ -969,39 +1003,39 @@
   expected_sources: ["CUSTOMER RELATIONS What customers want.pdf"]
   out_of_corpus: false
 
-- question: "What is the title of Chapter 2?"
-  expected_answer: "Capturing Customer Inputs"
+- question: "What is the title of Chapter 2 of What Customers Want?"
+  expected_answer: "Capturing Customer Inputs: Silence the 'Voice of the Customer'—Let's Talk Jobs, Outcomes, and Constraints"
   expected_sources: ["CUSTOMER RELATIONS What customers want.pdf"]
   out_of_corpus: false
 
-- question: "What is the title of Chapter 6?"
-  expected_answer: "Positioning Current Products"
+- question: "What is the title of Chapter 6 of What Customers Want?"
+  expected_answer: "Positioning Current Products: Connecting Opportunities with Valued Product Features"
   expected_sources: ["CUSTOMER RELATIONS What customers want.pdf"]
   out_of_corpus: false
 
 # --- Agile Product Management with Scrum (in-corpus) ---
 
-- question: "Who owns the copyright for the book?"
+- question: "Who owns the copyright for Agile Product Management with Scrum?"
   expected_answer: "Roman Pichler"
   expected_sources: ["SE-Scrum-Agile-Product-Management-with-Scrum-Roman-Pichler-BIN532.pdf"]
   out_of_corpus: false
 
-- question: "What is the ISBN-13 of the book?"
+- question: "What is the ISBN-13 of Agile Product Management with Scrum?"
   expected_answer: "978-0-321-60578-8"
   expected_sources: ["SE-Scrum-Agile-Product-Management-with-Scrum-Roman-Pichler-BIN532.pdf"]
   out_of_corpus: false
 
-- question: "Where was the book's text printed?"
+- question: "Where was the text of Agile Product Management with Scrum printed?"
   expected_answer: "Courier in Stoughton, Massachusetts"
   expected_sources: ["SE-Scrum-Agile-Product-Management-with-Scrum-Roman-Pichler-BIN532.pdf"]
   out_of_corpus: false
 
-- question: "Who wrote the foreword included in the book?"
-  expected_answer: "Jeff Sutherland"
+- question: "Who wrote the forewords to Agile Product Management with Scrum?"
+  expected_answer: "Jeff Sutherland and Brett Queener"
   expected_sources: ["SE-Scrum-Agile-Product-Management-with-Scrum-Roman-Pichler-BIN532.pdf"]
   out_of_corpus: false
 
-- question: "What is the title of the first chapter?"
+- question: "What is the title of the first chapter of Agile Product Management with Scrum?"
   expected_answer: "Understanding the Product Owner Role"
   expected_sources: ["SE-Scrum-Agile-Product-Management-with-Scrum-Roman-Pichler-BIN532.pdf"]
   out_of_corpus: false
@@ -1011,7 +1045,7 @@
   expected_sources: ["SE-Scrum-Agile-Product-Management-with-Scrum-Roman-Pichler-BIN532.pdf"]
   out_of_corpus: false
 
-- question: "When was the first printing of the book?"
+- question: "When was the first printing of Agile Product Management with Scrum?"
   expected_answer: "March 2010"
   expected_sources: ["SE-Scrum-Agile-Product-Management-with-Scrum-Roman-Pichler-BIN532.pdf"]
   out_of_corpus: false
@@ -1021,7 +1055,7 @@
   expected_sources: ["SE-Scrum-Agile-Product-Management-with-Scrum-Roman-Pichler-BIN532.pdf"]
   out_of_corpus: false
 
-- question: "To whom is the book dedicated?"
+- question: "To whom is Agile Product Management with Scrum dedicated?"
   expected_answer: "Melissa"
   expected_sources: ["SE-Scrum-Agile-Product-Management-with-Scrum-Roman-Pichler-BIN532.pdf"]
   out_of_corpus: false
@@ -1038,12 +1072,12 @@
   expected_sources: ["python data analysis.pdf"]
   out_of_corpus: false
 
-- question: "When was the third edition of the book published?"
+- question: "When was the third edition of Python Data Analysis published?"
   expected_answer: "February 2021"
   expected_sources: ["python data analysis.pdf"]
   out_of_corpus: false
 
-- question: "What is the ISBN of the book?"
+- question: "What is the ISBN of Python Data Analysis Third Edition?"
   expected_answer: "978-1-78995-524-8"
   expected_sources: ["python data analysis.pdf"]
   out_of_corpus: false
@@ -1058,12 +1092,12 @@
   expected_sources: ["python data analysis.pdf"]
   out_of_corpus: false
 
-- question: "Who is the Senior Editor of the book?"
+- question: "Who is the Senior Editor of Python Data Analysis Third Edition?"
   expected_answer: "Roshan Kumar"
   expected_sources: ["python data analysis.pdf"]
   out_of_corpus: false
 
-- question: "What is the production reference for the book?"
+- question: "What is the production reference for Python Data Analysis Third Edition?"
   expected_answer: "1070121"
   expected_sources: ["python data analysis.pdf"]
   out_of_corpus: false
@@ -1082,3 +1116,99 @@
   expected_answer: "NumPy 1.5 Beginner's Guide and NumPy Cookbook"
   expected_sources: ["python data analysis.pdf"]
   out_of_corpus: false
+
+# Follow-up chains. Only the last turn is scored; it only makes sense
+# read after the first, so the follow-up rewrite is what is under test.
+# Built from verified single-turn pairs above.
+
+- turns:
+    - "Who are the editors of the Macintosh Terminal Pocket Guide?"
+    - "What is its ISBN?"
+  expected_answer: "978-1-449-32834-4"
+  expected_sources: ["macintosh terminal pocket guide take command of your mac.pdf"]
+  out_of_corpus: false
+
+- turns:
+    - "What does the -l option tell the wc command to do?"
+    - "And what does the same option mean for ls?"
+  expected_answer: "Longer output"
+  expected_sources: ["macintosh terminal pocket guide take command of your mac.pdf"]
+  out_of_corpus: false
+
+- turns:
+    - "Who is the author of The Tipping Point?"
+    - "To whom did he dedicate it?"
+  expected_answer: "Joyce and Graham Gladwell"
+  expected_sources: ["the-tipping-point.pdf"]
+  out_of_corpus: false
+
+- turns:
+    - "When did the Tipping Point come for Hush Puppies?"
+    - "How many pairs of the classic ones did the company sell in 1995?"
+  expected_answer: "450,000 pairs"
+  expected_sources: ["the-tipping-point.pdf"]
+  out_of_corpus: false
+
+- turns:
+    - "Who are the authors of 'The Professional Product Owner'?"
+    - "Who holds the copyright for it?"
+  expected_answer: "Scrum.org"
+  expected_sources: ["The Professional Product Owner.f86fb025.pdf"]
+  out_of_corpus: false
+
+- turns:
+    - "Where does Klaus Pohl hold a full professorship?"
+    - "Where did he receive his Ph.D.?"
+  expected_answer: "RWTH Aachen"
+  expected_sources: ["Requirements Engineering Fundamentals.pdf"]
+  out_of_corpus: false
+
+- turns:
+    - "Who are the authors of Python Data Analysis Third Edition?"
+    - "When was that edition published?"
+  expected_answer: "February 2021"
+  expected_sources: ["python data analysis.pdf"]
+  out_of_corpus: false
+
+# Near-miss probes: the same kinds of questions the in-corpus set asks,
+# about books that are not in the library. They sit closest to the floor.
+
+- question: "What is the ISBN of Thinking, Fast and Slow?"
+  expected_answer: ""
+  expected_sources: []
+  out_of_corpus: true
+
+- question: "Who wrote the foreword to The Lean Startup?"
+  expected_answer: ""
+  expected_sources: []
+  out_of_corpus: true
+
+- question: "In what year was Atomic Habits first published?"
+  expected_answer: ""
+  expected_sources: []
+  out_of_corpus: true
+
+- question: "What is the title of Chapter 3 of Deep Work?"
+  expected_answer: ""
+  expected_sources: []
+  out_of_corpus: true
+
+- question: "Who is the publisher of Clean Code and where is it located?"
+  expected_answer: ""
+  expected_sources: []
+  out_of_corpus: true
+
+- question: "To whom is Sapiens: A Brief History of Humankind dedicated?"
+  expected_answer: ""
+  expected_sources: []
+  out_of_corpus: true
+
+- question: "Who holds the copyright for User Story Mapping by Jeff Patton?"
+  expected_answer: ""
+  expected_sources: []
+  out_of_corpus: true
+
+- question: "Kto jest autorem książki 'Lalka'?"
+  expected_answer: ""
+  expected_sources: []
+  out_of_corpus: true

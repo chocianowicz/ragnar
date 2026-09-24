@@ -6,13 +6,19 @@ production documents have no code path to an external service.
 
 Usage:
     python eval/run_eval.py                  # deterministic metrics only
+    python eval/run_eval.py --resume eval/reports/answers-<stamp>.jsonl
+    python eval/run_eval.py --collection hybridqa_structural --multi-hop \\
+        --golden eval/golden_hybridqa_draft.yaml
     python eval/run_eval.py --calibrate       # sweep the similarity floor
     python eval/run_eval.py --golden mine.yaml
     python eval/run_eval.py --calibrate --floors 0.45:0.70:0.01
 """
 import argparse
 import json
+import os
+import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -28,12 +34,15 @@ from retrieval.embedder import OllamaEmbedder
 from retrieval.store import QdrantStore
 from retrieval.reranker import BGEReranker
 from retrieval.search import Search
+from retrieval.agentic import AgenticSearch
 from generation.llm import OllamaLLM
 from generation import followup, injection
 from generation.answerer import (Answerer, AnswerMode, classify,
                                  citation_labels)
 from eval.metrics import (refusal_accuracy, citation_accuracy, normalise,
-                          _should_refuse)
+                          _should_refuse, aggregation_guard, METRICS,
+                          missed_refusal_rate, false_refusal_rate)
+from eval.stats import metric_ci, read_jsonl
 
 ROOT = Path(__file__).parent
 
@@ -107,91 +116,224 @@ def check_corpus(store: QdrantStore, golden: list[dict]) -> None:
         )
 
 
-def build_report(cases: list[dict], golden_path, retrieval_only: bool) -> dict:
+def build_report(cases: list[dict], golden_path, retrieval_only: bool,
+                 prov: dict | None = None) -> dict:
     """The summary written to stdout and to eval/reports/.
 
     `retrieval_only` is recorded rather than implied: both metrics are
     derived from retrieval, so a run without the answer model produces
     real numbers — and someone reading the report later has to be able to
     tell that the answers themselves were never generated.
+
+    Every metric carries a 95% bootstrap range (eval/stats.py). Multi-hop
+    metrics are left out when the set has no multi-hop case.
     """
-    return {
+    has_multihop = any(c.get("multihop") for c in cases)
+    latencies = sorted(c["latency_s"] for c in cases if "latency_s" in c)
+    report = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "n_cases": len(cases),
         "golden_set": str(golden_path or "eval/golden_set.yaml"),
         "retrieval_only": bool(retrieval_only),
-        "refusal_accuracy": refusal_accuracy(cases),
-        "citation_accuracy": citation_accuracy(cases),
+        "provenance": prov,
+        **{name: metric_ci(fn, cases) for name, fn in METRICS.items()
+           if has_multihop or not name.startswith("multi_hop")},
+        "aggregation_guard": aggregation_guard(cases),
     }
+    if latencies:
+        report["latency_s"] = {
+            "p50": latencies[len(latencies) // 2],
+            "p90": latencies[min(int(len(latencies) * 0.9),
+                                  len(latencies) - 1)],
+            "max": latencies[-1],
+        }
+    return report
+
+
+def case_key(entry: dict) -> str:
+    """Identity of a golden entry across a crash and a resume.
+
+    The question alone is not unique: two books can both be asked who they
+    are dedicated to. Question plus expected sources is.
+    """
+    return json.dumps([turns_of(entry)[-1],
+                       sorted(entry.get("expected_sources", []))],
+                      ensure_ascii=False)
+
+
+def git_revision() -> str:
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=ROOT.parent,
+            capture_output=True, text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+
+
+def provenance(cfg: Config, golden_path: Path, collection: str,
+               stages: dict, retrieval_only: bool, score_floor: float) -> dict:
+    """What produced a run. `config` must match for a resume to append."""
+    return {
+        "git": git_revision(),
+        "started": datetime.now().isoformat(timespec="seconds"),
+        "config": {
+            "golden_set": str(golden_path),
+            "collection": collection,
+            "llm_model": cfg.llm_model,
+            "embedding_model": cfg.embedding_model,
+            "reranker_model": cfg.reranker_model,
+            "candidates": cfg.candidates,
+            "top_k": cfg.top_k,
+            "score_floor": score_floor,
+            "stages": stages,
+            "retrieval_only": bool(retrieval_only),
+        },
+    }
+
+
+def append_line(handle, row: dict) -> None:
+    """One JSON line, on disk before the next case starts."""
+    handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    handle.flush()
+    os.fsync(handle.fileno())
 
 
 def run_cases(score_floor: float | None = None,
               golden_path: Path | None = None,
               verify_corpus: bool = True,
-              retrieval_only: bool = False) -> list[dict]:
+              retrieval_only: bool = False,
+              collection: str | None = None,
+              stages: dict | None = None,
+              sink: Path | None = None) -> list[dict]:
+    """Run the golden set through retrieval + answering.
+
+    stages switches on the AgenticSearch stages the UI offers
+    (multi_query, multi_hop, self_correct); with none on, this is the plain
+    Search path.
+
+    sink, when given, gets one JSON line per finished case. If it already
+    holds cases from an interrupted run of the same config, those are kept
+    and skipped, so a crash costs only the case in flight.
+    """
     cfg = Config()
     floor = cfg.score_floor if score_floor is None else score_floor
+    collection = collection or cfg.collection
+    stages = {k: v for k, v in (stages or {}).items() if v}
+    golden_path = golden_path or (ROOT / "golden_set.yaml")
 
     embedder = OllamaEmbedder(cfg.ollama_url, cfg.embedding_model)
-    store = QdrantStore(cfg.qdrant_url, cfg.collection, cfg.embedding_dim)
+    store = QdrantStore(cfg.qdrant_url, collection, cfg.embedding_dim)
     search = Search(embedder, store,
                     BGEReranker(cfg.reranker_model,
                                 max_length=cfg.reranker_max_length),
                     cfg.candidates, cfg.top_k, floor)
     llm = OllamaLLM(cfg.ollama_url, cfg.llm_model)
     answerer = Answerer(llm)
+    # Wired as ui/services.py does, so stages measure what the UI runs.
+    agentic = AgenticSearch(
+        search, llm,
+        max_hops=int(cfg.agentic.get("max_hops", 2)),
+        variants=int(cfg.agentic.get("variants", 3)),
+    ) if stages else None
 
-    golden = load_golden(golden_path or (ROOT / "golden_set.yaml"))
+    golden = load_golden(golden_path)
     if verify_corpus:
         check_corpus(store, golden)
-    cases = []
 
-    for entry in golden:
-        history: list[dict] = []
-        outcome = None
-        answer_text, citations, refused, resolved = "", [], True, None
+    prov = provenance(cfg, golden_path, collection, stages,
+                      retrieval_only, floor)
+    cases: list[dict] = []
+    handle = None
+    if sink:
+        old_prov, cases = read_jsonl(sink)
+        if old_prov and old_prov["config"] != prov["config"]:
+            raise SystemExit(
+                f"{sink} was written by a different config; resuming would "
+                f"mix two runs.\n  was: {old_prov['config']}\n  now: "
+                f"{prov['config']}")
+        sink.parent.mkdir(parents=True, exist_ok=True)
+        handle = open(sink, "a", encoding="utf-8")
+        if old_prov is None:
+            append_line(handle, {"_provenance": prov})
+        if cases:
+            print(f"resuming {sink}: {len(cases)} of {len(golden)} done",
+                  file=sys.stderr)
+    done = {case_key(c) for c in cases}
 
-        for question in turns_of(entry):
-            search_question, was_resolved = question, False
-            if history:
-                search_question, was_resolved = followup.resolve(
-                    llm, question, history)
-            outcome = search.find(search_question)
-            mode = classify(question, outcome.refused, outcome.results)
-
-            if mode is not AnswerMode.ANSWER:
-                answer_text, citations, refused = "", [], True
-            elif retrieval_only:
-                # Citations come from the retrieved chunks, never from the
-                # model, so they are already known. Skipping generation
-                # costs the answer text and nothing either metric reads.
-                answer_text = ""
-                citations = citation_labels(outcome.results)
-                refused = False
-            else:
-                answer = answerer.answer(question, outcome.results,
-                                         history=history)
-                answer_text, citations, refused = (
-                    answer.text, answer.citations, answer.refused)
-            resolved = search_question if was_resolved else None
-            history += [{"role": "user", "content": question},
-                        {"role": "assistant", "content": answer_text}]
-
-        cases.append({
-            **entry,
-            "question": turns_of(entry)[-1],
-            "resolved_question": resolved,
-            "answer": answer_text,
-            "citations": citations,
-            "refused": refused,
-            "contexts": [r.chunk.text for r in outcome.results],
-            "flagged": case_flagged(outcome.results),
-            # What the floor is compared against. Recorded so a
-            # calibration sweep can be derived from this one run.
-            "best_score": outcome.trace.best_score,
-        })
+    try:
+        for n, entry in enumerate(golden, 1):
+            if case_key(entry) in done:
+                continue
+            cases.append(run_one(entry, search, agentic, stages, llm,
+                                 answerer, retrieval_only))
+            if handle:
+                append_line(handle, cases[-1])
+            print(f"[{n}/{len(golden)}] {cases[-1]['latency_s']:.1f}s "
+                  f"{cases[-1]['question'][:60]}", file=sys.stderr)
+    finally:
+        if handle:
+            handle.close()
 
     return cases
+
+
+def run_one(entry, search, agentic, stages, llm, answerer,
+            retrieval_only) -> dict:
+    started = time.perf_counter()
+    history: list[dict] = []
+    outcome, mode = None, None
+    answer_text, citations, refused, resolved = "", [], True, None
+
+    for question in turns_of(entry):
+        # The history the last turn was asked with; the follow-up judge
+        # needs it to tell whether the rewrite kept the meaning.
+        prior = list(history)
+        search_question, was_resolved = question, False
+        if history:
+            search_question, was_resolved = followup.resolve(
+                llm, question, history)
+        if agentic:
+            outcome, _ = agentic.find(search_question, **stages)
+        else:
+            outcome = search.find(search_question)
+        mode = classify(question, outcome.refused, outcome.results)
+
+        if mode is not AnswerMode.ANSWER:
+            answer_text, citations, refused = "", [], True
+        elif retrieval_only:
+            # Citations come from the retrieved chunks, never from the
+            # model, so they are already known. Skipping generation
+            # costs the answer text and nothing either metric reads.
+            answer_text = ""
+            citations = citation_labels(outcome.results)
+            refused = False
+        else:
+            answer = answerer.answer(question, outcome.results,
+                                     history=history)
+            answer_text, citations, refused = (
+                answer.text, answer.citations, answer.refused)
+        resolved = search_question if was_resolved else None
+        history += [{"role": "user", "content": question},
+                    {"role": "assistant", "content": answer_text}]
+
+    return {
+        **entry,
+        "question": turns_of(entry)[-1],
+        "resolved_question": resolved,
+        "history": prior,
+        "answer": answer_text,
+        "citations": citations,
+        "refused": refused,
+        "mode": mode.value,
+        "contexts": [r.chunk.text for r in outcome.results],
+        "context_sources": [r.chunk.citation_label()
+                            for r in outcome.results],
+        "flagged": case_flagged(outcome.results),
+        # What the floor is compared against. Recorded so a
+        # calibration sweep can be derived from this one run.
+        "best_score": outcome.trace.best_score,
+        "latency_s": round(time.perf_counter() - started, 2),
+    }
 
 
 def parse_floors(spec: str) -> list[float]:
@@ -214,48 +356,67 @@ def parse_floors(spec: str) -> list[float]:
 DEFAULT_FLOORS = "0.40:0.80:0.05"
 
 
-def sweep(cases: list[dict], floors: list[float]):
-    """(floor, refusal_accuracy, questions missed) for each candidate floor.
+def at_floor(cases: list[dict], floor: float) -> list[dict]:
+    """The cases as they would have come out under `floor`.
 
-    Derived from one run rather than re-running per floor. Retrieval and
-    re-ranking do not depend on the floor — it only decides which of the
-    already-scored passages survive — so a case refuses exactly when its
-    best score falls below it. Re-running the whole set nine times to
-    discover that would cost hours of re-ranking to learn nothing new.
+    Derived rather than re-run. Retrieval and re-ranking do not depend on
+    the floor — it only decides which already-scored passages survive — so
+    a case refuses exactly when its best score falls below it.
+    """
+    return [{**c, "refused": c.get("best_score") is None
+             or c["best_score"] < floor} for c in cases]
+
+
+def sweep(cases: list[dict], floors: list[float]):
+    """(floor, refusal_accuracy, missed, false, wrong questions) per floor.
+
+    missed = out-of-corpus answered anyway (the hallucination risk), false =
+    answerable questions refused. refusal_accuracy weighs them equally;
+    choosing a floor should not.
     """
     rows = []
     for floor in floors:
-        scored = []
-        for case in cases:
-            best = case.get("best_score")
-            refused = best is None or best < floor
-            scored.append({**case, "refused": refused})
-        missed = [c["question"] for c in scored
-                  if bool(c["refused"]) != _should_refuse(c)]
-        rows.append((floor, refusal_accuracy(scored), missed))
+        scored = at_floor(cases, floor)
+        wrong = [c["question"] for c in scored
+                 if bool(c["refused"]) != _should_refuse(c)]
+        rows.append((floor, refusal_accuracy(scored),
+                     missed_refusal_rate(scored), false_refusal_rate(scored),
+                     wrong))
     return rows
 
 
 def calibrate_floor(floors: list[float],
                     golden_path: Path | None = None,
-                    retrieval_only: bool = False) -> None:
-    """Sweep candidate floors and report which separates the two groups best.
+                    retrieval_only: bool = False,
+                    collection: str | None = None,
+                    stages: dict | None = None,
+                    sink: Path | None = None) -> None:
+    """Sweep candidate floors and report the trade-off at each.
 
     The floor cannot be chosen in advance - it depends on the corpus. This
     is what the out-of-corpus golden entries exist for.
     """
-    cases = run_cases(golden_path=golden_path, retrieval_only=retrieval_only)
+    cases = run_cases(golden_path=golden_path, retrieval_only=retrieval_only,
+                      collection=collection, stages=stages, sink=sink)
 
-    print(f"{'floor':>7} {'refusal_acc':>12}  misses")
-    for floor, accuracy, missed in sweep(cases, floors):
-        summary = "; ".join(q[:38] for q in missed[:3])
-        if len(missed) > 3:
-            summary += f" (+{len(missed) - 3} more)"
-        print(f"{floor:>7.2f} {accuracy:>12.2f}  {summary}")
+    print(f"{'floor':>6} {'accuracy':>9} {'missed':>7} {'false':>6}  wrong")
+    rows = sweep(cases, floors)
+    for floor, accuracy, missed, false, wrong in rows:
+        summary = "; ".join(q[:38] for q in wrong[:3])
+        if len(wrong) > 3:
+            summary += f" (+{len(wrong) - 3} more)"
+        print(f"{floor:>6.2f} {accuracy:>9.3f} {missed:>7.3f} {false:>6.3f}"
+              f"  {summary}")
 
-    best = max(sweep(cases, floors), key=lambda row: row[1])
-    print(f"\nBest separation at floor {best[0]:.2f} "
-          f"(refusal accuracy {best[1]:.2f}, {len(best[2])} wrong of {len(cases)})")
+    best = max(rows, key=lambda row: row[1])
+    ci = metric_ci(lambda cs: refusal_accuracy(at_floor(cs, best[0])), cases)
+    print(f"\nBest separation at floor {best[0]:.2f}: refusal accuracy "
+          f"{best[1]:.3f} (95% range {ci['lo']:.3f}-{ci['hi']:.3f}), "
+          f"missed {best[2]:.3f}, false {best[3]:.3f}, "
+          f"{len(best[4])} wrong of {len(cases)}.")
+    print("missed = out-of-corpus answered (worse); false = answerable "
+          "refused. Prefer the lowest floor on a flat stretch of low "
+          "`missed`, not a lone peak.")
     print("Citation accuracy is unaffected by the floor; it was "
           f"{citation_accuracy(cases):.2f} on this run.")
 
@@ -278,27 +439,58 @@ def main() -> None:
         "--floors", default=DEFAULT_FLOORS,
         help=f"calibration sweep as start:stop:step (default {DEFAULT_FLOORS})",
     )
+    parser.add_argument(
+        "--collection", default=None,
+        help="Qdrant collection to search (default: config.yaml's). "
+             "The HybridQA benchmark lives in 'hybridqa_structural'.",
+    )
+    for stage in ("multi-hop", "multi-query", "self-correct"):
+        parser.add_argument(f"--{stage}", action="store_true",
+                            help=f"turn on the {stage} AgenticSearch stage")
+    parser.add_argument(
+        "--resume", type=Path, default=None,
+        help="continue an interrupted run from its answers-*.jsonl sink",
+    )
     args = parser.parse_args()
 
+    reports = ROOT / "reports"
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    stages = {"multi_hop": args.multi_hop, "multi_query": args.multi_query,
+              "self_correct": args.self_correct}
+
     if args.calibrate:
+        # Multi-hop and self-correct only run after something has cleared
+        # the floor, so they cannot move the refuse/answer decision; they
+        # would only make the recorded best score a later pass's. The UI's
+        # "Rephrase the question" gate is multi-query alone.
+        if args.multi_hop or args.self_correct:
+            parser.error("--calibrate takes --multi-query only: multi-hop "
+                         "and self-correct run after the floor decision")
+        sink = args.resume or reports / f"calibrate-{stamp}.jsonl"
+        print(f"cases -> {sink}", file=sys.stderr)
         calibrate_floor(parse_floors(args.floors), golden_path=args.golden,
-                        retrieval_only=args.retrieval_only)
+                        retrieval_only=args.retrieval_only,
+                        collection=args.collection, stages=stages, sink=sink)
         return
 
+    # Every case lands here as it finishes, so a crash or a Ctrl-C loses
+    # only the case in flight. Rerun with --resume on this path.
+    sink = args.resume or reports / f"answers-{stamp}.jsonl"
+    print(f"answers -> {sink}", file=sys.stderr)
     cases = run_cases(golden_path=args.golden,
-                      retrieval_only=args.retrieval_only)
-    report = build_report(cases, args.golden, args.retrieval_only)
+                      retrieval_only=args.retrieval_only,
+                      collection=args.collection, stages=stages, sink=sink)
+    prov, _ = read_jsonl(sink)
+    report = build_report(cases, args.golden, args.retrieval_only, prov)
 
     print(json.dumps(report, indent=2, ensure_ascii=False))
 
-    reports = ROOT / "reports"
-    reports.mkdir(exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    (reports / f"{stamp}.json").write_text(
+    out = sink.with_name(sink.stem.replace("answers-", "") + ".json")
+    out.write_text(
         json.dumps({"summary": report, "cases": cases},
                    indent=2, ensure_ascii=False)
     )
-    print(f"\nwrote eval/reports/{stamp}.json")
+    print(f"\nwrote {out}")
 
 
 if __name__ == "__main__":
