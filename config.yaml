@@ -26,14 +26,14 @@ chunking:
 retrieval:
   candidates: 25
   top_k: 5
-  # Was 0.6 from Task 25's calibration (only 5 golden-set cases, explicitly
-  # flagged there as not production-trustworthy). Real usage against a real
-  # uploaded corpus showed a clean gap: out-of-corpus questions scored
-  # 0.50-0.503, relevant ones (even a single vague word) scored 0.578+.
-  # 0.55 sits in that gap with margin on both sides. Still a stopgap, not a
-  # real calibration - see eval/README.md, which needs a much larger golden
-  # set before this number should be trusted.
-  score_floor: 0.55
+  # Calibrated 2026-09-24 on the 222-case golden set (--calibrate
+  # --retrieval-only --multi-query, GPU reranker). No floor had a flat
+  # stretch of low missed refusals; 0.62-0.63 is the first plateau where
+  # missed drops (0.49 -> 0.31) while refusal accuracy (0.815) stays inside
+  # the best floor's 95% range. Scores are sigmoid(probability):
+  # CrossEncoder.predict already applies a sigmoid and BGEReranker.rerank
+  # applies another, so 0.62 here is a cross-encoder probability of ~0.49.
+  score_floor: 0.62
   # Pair the dense embedding with a lexical (sparse) one and fuse the two
   # by reciprocal rank. Dense vectors are poor at exact identifiers - a
   # CN code in a large reference table ranked 291st without this. Applies
