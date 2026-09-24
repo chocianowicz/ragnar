@@ -64,3 +64,50 @@ def test_export_failure_defaults_to_trusting_doclings_classification():
             raise RuntimeError("boom")
 
     assert _looks_like_a_table(Broken(), doc=None) is True
+
+
+def test_ocr_fallback_reads_the_whole_page():
+    """A scanned page is one bitmap the layout model may not box; OCR of
+    only detected regions returned nothing for a 1-page scan."""
+    from docling.datamodel.base_models import InputFormat
+    from ingestion.parser import _ocr_converter
+
+    options = _ocr_converter().format_to_options[InputFormat.PDF].pipeline_options
+    assert options.do_ocr and options.ocr_options.force_full_page_ocr
+
+
+def test_ocr_fallback_uses_the_mac_gpu_only_where_there_is_one(monkeypatch):
+    from docling.datamodel.base_models import InputFormat
+    from ingestion import parser
+
+    def ocr(mps):
+        monkeypatch.setattr(parser, "_mps_available", lambda: mps)
+        return (parser._ocr_converter().format_to_options[InputFormat.PDF]
+                .pipeline_options.ocr_options)
+
+    on_mac = ocr(True)
+    assert on_mac.backend == "torch" and on_mac.force_full_page_ocr
+    assert on_mac.rapidocr_params == {"EngineConfig.torch.use_mps": True}
+    elsewhere = ocr(False)
+    assert elsewhere.force_full_page_ocr
+    assert "EngineConfig.torch.use_mps" not in (
+        getattr(elsewhere, "rapidocr_params", None) or {})
+
+
+def test_image_placeholders_do_not_count_as_text():
+    """A scan's markdown is "<!-- image -->" per picture and nothing else;
+    counting that as text kept it above the trigger, so it was never OCR'd."""
+    from ingestion.parser import OCR_TRIGGER_CHARS_PER_PAGE, ParsedDocument
+
+    scan = ParsedDocument(markdown="<!-- image -->\n\n" * 9, blocks=[],
+                          page_count=1)
+    assert scan.chars_per_page < OCR_TRIGGER_CHARS_PER_PAGE
+
+
+def test_a_long_scan_is_not_one_dense_page():
+    """Two stray letters over 300 scanned pages is not 2 chars on 1 page."""
+    from ingestion.parser import Block, OCR_TRIGGER_CHARS_PER_PAGE, ParsedDocument
+
+    scan = ParsedDocument(markdown="I\n\nI", page_count=300,
+                          blocks=[Block(text="I", page=1)] * 2)
+    assert scan.chars_per_page < OCR_TRIGGER_CHARS_PER_PAGE

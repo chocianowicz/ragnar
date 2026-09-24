@@ -172,7 +172,7 @@ def test_sweep_derives_each_floor_from_one_run():
              {"question": "absent", "out_of_corpus": True,
               "best_score": 0.58, "citations": [], "expected_sources": []}]
 
-    rows = {floor: acc for floor, acc, _ in sweep(cases, [0.50, 0.60, 0.80])}
+    rows = {row[0]: row[1] for row in sweep(cases, [0.50, 0.60, 0.80])}
 
     assert rows[0.50] == 0.5    # neither refuses; the absent one is wrong
     assert rows[0.60] == 1.0    # separates them
@@ -185,6 +185,22 @@ def test_sweep_names_what_each_floor_gets_wrong():
     cases = [{"question": "absent thing", "out_of_corpus": True,
               "best_score": 0.58, "citations": [], "expected_sources": []}]
 
-    [(floor, acc, missed)] = sweep(cases, [0.50])
+    [(floor, acc, missed, false, wrong)] = sweep(cases, [0.50])
 
-    assert missed == ["absent thing"]
+    assert wrong == ["absent thing"]
+
+
+def test_sweep_splits_the_two_refusal_errors():
+    """Answering an out-of-corpus question is the worse mistake, so the
+    sweep reports it apart from refusing an answerable one."""
+    from eval.run_eval import sweep
+
+    cases = [{"question": "in", "out_of_corpus": False, "best_score": 0.60,
+              "citations": [], "expected_sources": ["a.pdf"]},
+             {"question": "out", "out_of_corpus": True, "best_score": 0.58,
+              "citations": [], "expected_sources": []}]
+
+    low, high = sweep(cases, [0.50, 0.65])
+
+    assert (low[2], low[3]) == (1.0, 0.0)     # answers both: one missed
+    assert (high[2], high[3]) == (0.0, 1.0)   # refuses both: one false
