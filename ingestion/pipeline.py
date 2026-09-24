@@ -1,11 +1,18 @@
+import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
+
+from ingestion.parser import ParsedDocument
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
 class IngestResult:
     chunk_count: int
     markdown: str
+    parsed: "ParsedDocument | None" = None
 
 
 class Pipeline:
@@ -28,22 +35,42 @@ class Pipeline:
         self._chunker = chunker
 
     def ingest(self, path: Path, doc_id: str,
-               filename: str | None = None) -> IngestResult:
+               filename: str | None = None,
+               parsed: ParsedDocument | None = None) -> IngestResult:
         """Ingest the file at `path`, recorded under `doc_id`.
 
         `filename` is what citations will say. It is passed separately
         because the inbox names files by doc_id — path.name is a storage
         detail, and using it would put a content hash in every citation.
+
+        Passing `parsed` skips the parse step entirely. The caller owns the
+        cache: this is what lets a chunking-only change rebuild the index
+        without paying for Docling again.
         """
-        parsed = self._parser.parse(path)
+        t0 = time.perf_counter()
+        if parsed is None:
+            parsed = self._parser.parse(path)
+        t1 = time.perf_counter()
+
         chunks = self._chunker.chunk(parsed, doc_id, filename or path.name)
+        t2 = time.perf_counter()
 
         # Replace wholesale so stale and fresh chunks never coexist.
         self._store.delete_by_doc(doc_id)
 
+        t3 = t4 = t2
         if chunks:
             vectors = self._embedder.embed([c.text for c in chunks])
+            t3 = time.perf_counter()
             self._store.upsert(chunks, vectors)
+            t4 = time.perf_counter()
+
+        # Timed in stages because the whole point of the cache is the first
+        # number, and a slowdown on this path was invisible without it.
+        log.info("ingest %s: parse=%.1fs chunk=%.1fs embed=%.1fs upsert=%.1fs "
+                 "chunks=%d", path.name, t1 - t0, t2 - t1, t3 - t2, t4 - t3,
+                 len(chunks))
 
         return IngestResult(chunk_count=len(chunks),
-                            markdown=parsed.markdown)
+                            markdown=parsed.markdown,
+                            parsed=parsed)

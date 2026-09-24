@@ -198,8 +198,10 @@ qdrant_storage        ← a Docker volume holding the vectors
 ```
 
 Converted documents are cached by content hash, so re-uploading the same file costs
-nothing and a chunking change can be replayed without re-parsing. The vectors are the
-one thing that would have to be rebuilt from scratch — see Known gaps.
+nothing — and the parsed blocks are cached beside the markdown
+(`converted/<doc_id>.blocks.json`), so a chunking change replays without re-parsing.
+The vectors are the one thing that would have to be rebuilt from scratch — see Known
+gaps.
 
 ---
 
@@ -225,6 +227,73 @@ SIGKILL the app, and without that line it stays dead until you notice — but a 
 
 ---
 
+## The host GPU service
+
+Two things in this app are GPU-bound and cannot reach the GPU from inside the container,
+because Docker on macOS runs a Linux VM with no Metal. Both are served from the host by
+one process, `host_server.py`, the same arrangement Ollama already uses:
+
+```bash
+# on the host, from the repo root — not in Docker
+.venv/bin/python host_server.py
+```
+
+Measured on an M5 Pro:
+
+| Workload | In the container (CPU) | On the host (MPS) |
+|---|---|---|
+| Re-rank 30 candidates | 10.34 s | 1.48 s |
+| Parse a 300-page book | ~30 min | minutes |
+
+It serves two endpoints on port 8007 — `POST /rerank` for the cross-encoder and
+`POST /parse` for Docling — and `GET /health` reports which of the two loaded.
+`docker-compose.yml` already points the app at it, so there is nothing else to do.
+
+**It binds `127.0.0.1`.** Not `0.0.0.0`: the service is only ever meant for the container
+on this machine, and it has no authentication, so it has no business being reachable from
+the LAN. Docker still reaches it through `host.docker.internal` (mapped to `host-gateway`
+in `docker-compose.yml`).
+
+Useful flags:
+
+```bash
+.venv/bin/python host_server.py --device cpu        # no GPU, same API
+.venv/bin/python host_server.py --port 8008         # set the URL in .env to match
+.venv/bin/python host_server.py --no-parser         # re-ranking only
+.venv/bin/python host_server.py --no-reranker       # parsing only
+```
+
+### Nothing breaks when it is not running
+
+This is the property the whole design rests on. Every failure mode is a fallback to
+in-process CPU, never an error:
+
+| Situation | What happens |
+|---|---|
+| `host_server.py` not started | The request fails, the client logs a warning and runs Docling / the cross-encoder in the container |
+| `PARSER_URL` or `RERANKER_URL` empty | That workload never leaves the container, even if the server is up |
+| Server up, model failed to load | `503`, client falls back |
+| Same URL, wrong token cap | The server answers `400` rather than scoring at its own window — see below |
+| Malformed response | Rejected and treated as a failure, so the fallback runs instead of indexing nothing |
+
+So the app degrades from fast to slow, and only when the service is down. It never
+degrades from working to broken.
+
+**Why the `400` on a token-cap mismatch rather than just serving it.** The reranker
+truncates every (query, chunk) pair at `MAX_LENGTH` (512 tokens). If the host scored at
+8192 while the container scored at 512, the same chunk would get different numbers
+depending on where it was scored, and the `score_floor` calibrated against one path would
+quietly stop applying to the other. A refusal the client understands is worth more than a
+fast answer that is measured differently.
+
+**OCR.** The parse server runs the same `DoclingParser` as the container, including the
+OCR fallback for scanned documents. That fallback forces OCR over the whole page rather
+than over regions RapidOCR detects by itself, because on a page it cannot segment there
+are no regions to find: a one-page scanned PDF extracted 0 characters before that and
+1,448 after.
+
+---
+
 ## Settings
 
 Two controls are in the panel itself, because they are the two things worth deciding
@@ -243,8 +312,8 @@ Everything else is a deployment choice — set once, then left — and lives beh
 | Re-rank results | on | Off is faster, less precise, and **disables the relevance floor** |
 | Candidates considered | 25 | Passages fetched before re-ranking picks the best few. Only shown when re-ranking is on: without it the top few are kept as the search ranked them and the pool is never used |
 | Temperature | 0 | Higher wanders further from the excerpts |
-| Rephrase the question | on | Searches several rewordings *beside* your own wording, and searches again if the first pass is thin. One or two extra model calls |
-| Remember context | on | Resolves what a follow-up refers to before searching. One model call per follow-up |
+| Rephrase the question | on | Searches several rewordings *beside* your own wording, and searches again if the first pass is thin. After a refusal, also tries the broader group the subject belongs to, if the chat or the documents state the link; that answer is marked indirect. One or two extra model calls, one more on a refusal |
+| Remember context | on | Resolves what a follow-up refers to before searching, and lets the answer see the recent chat. Off, each question stands alone and the chat cannot supply a link for an indirect answer. One model call per follow-up |
 | Check the draft answer | off | Drafts, judges whether the excerpts support it, searches again if not. Two model calls, and no golden-set evidence yet that it helps |
 | Chunk size | 500 tokens | Target size per chunk, 50-token overlap |
 | Table rows per chunk | 20 | Rows per table chunk, header repeated in each |
@@ -324,7 +393,12 @@ Tracked rather than glossed over:
 - **The similarity floor is hand-tuned**, not calibrated — see `eval/README.md`. It
   needs a much larger golden set before the number deserves trust.
 - **No recovery path if the vector store is lost.** Re-embedding from the converted
-  document cache is designed for and not implemented.
+  document cache (the parsed blocks, not just the markdown) is designed for and
+  not implemented: the cache exists, but nothing drives a full rebuild from it.
+- **The parse cache is keyed by content alone.** Changing a *parser* setting — the
+  OCR fallback, say — does not invalidate it, so an already-ingested document keeps
+  its old blocks until `converted/<doc_id>.blocks.json` is deleted. A parser version
+  in the cache key would fix this.
 
 The test suite runs against real Ollama, Qdrant and Docling rather than mocks, which is
 why it is slow and why it catches integration breakage that mocks would hide.

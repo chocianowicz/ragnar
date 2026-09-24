@@ -1,8 +1,13 @@
-from dataclasses import dataclass, field
+import logging
+import os
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+import httpx
+
 from docling.document_converter import DocumentConverter, PdfFormatOption
-from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions
+from docling.datamodel.pipeline_options import (
+    OcrMode, PdfPipelineOptions, RapidOcrOptions)
 from docling.datamodel.base_models import InputFormat
 
 
@@ -32,18 +37,20 @@ def _ocr_converter() -> DocumentConverter:
     # with near-empty text — typically scanned/image-only PDFs.
     options = PdfPipelineOptions()
     options.do_ocr = True
-    # OCR every page as an image. By default Docling only OCRs the bitmap
-    # regions its layout model finds, and on a page that is one full-page
-    # scan it can find none: a scanned 1-page contract came back as 0
-    # characters that way, and as 1,448 with this set.
-    options.ocr_options.force_full_page_ocr = True
+    # RapidOCR finds text regions by itself and, on a full-page scan with no
+    # detectable ones, comes back with nothing at all — a one-page scanned
+    # PDF measured 0 characters on this machine until this was set, 1448
+    # after. It is the mode, not a boolean: FULL_PAGE is what
+    # force_full_page_ocr meant before Docling deprecated that field, and
+    # DEFAULT is the region-detection behaviour that failed.
+    options.ocr_options.mode = OcrMode.FULL_PAGE
     if _mps_available():
         # RapidOCR's torch backend can run on the Mac GPU, but it defaults
         # to CPU. Same text, about 2x faster: 15 scanned pages took 21.6s
         # on MPS and 42.5s on CPU. Only switched on where MPS exists, so
         # the container keeps the setup it already had.
         options.ocr_options = RapidOcrOptions(
-            backend="torch", force_full_page_ocr=True,
+            backend="torch", mode=OcrMode.FULL_PAGE,
             rapidocr_params={"EngineConfig.torch.use_mps": True})
     return DocumentConverter(format_options={
         InputFormat.PDF: PdfFormatOption(pipeline_options=options)
@@ -229,3 +236,88 @@ class DoclingParser:
             # of healthy density.
             page_count=len(doc.pages) or len(pages) or 1,
         )
+
+
+# host_server.py on the Mac, where Docling's layout and table models run on
+# the GPU. Docker on macOS cannot reach Metal, so in the container they run
+# on CPU (~30 min for a 300-page book). Unset keeps parsing in-process.
+PARSER_URL = os.environ.get("PARSER_URL", "").rstrip("/")
+# A whole book can take minutes even on the GPU.
+PARSE_TIMEOUT = 1800.0
+
+log = logging.getLogger(__name__)
+
+
+def to_dict(parsed: ParsedDocument) -> dict:
+    return asdict(parsed)
+
+
+def from_dict(data: dict) -> ParsedDocument:
+    """Rebuild what to_dict() serialized, refusing anything that isn't that.
+
+    Missing or misnamed keys raise rather than defaulting: a remote response
+    is a contract, and a half-built ParsedDocument would index a document
+    with no text and report success. RemoteParser catches the exceptions and
+    parses locally instead.
+    """
+    markdown = data["markdown"]
+    if not isinstance(markdown, str):
+        raise TypeError(f"markdown must be a string, got {type(markdown).__name__}")
+    blocks = data["blocks"]
+    if not isinstance(blocks, list):
+        raise TypeError(f"blocks must be a list, got {type(blocks).__name__}")
+    return ParsedDocument(
+        markdown=markdown,
+        blocks=[Block(**b) for b in blocks],
+        page_count=data["page_count"],
+        low_confidence=data["low_confidence"],
+    )
+
+
+class RemoteParser:
+    """Parses through host_server.py and falls back to local Docling.
+
+    The host runs the same DoclingParser code, so only the device changes.
+    The file is sent as bytes rather than as a path, so it works whatever
+    the container and the host call the directory.
+    """
+
+    def __init__(self, url: str = PARSER_URL, fallback=None,
+                 client: httpx.Client | None = None):
+        self._url = url.rstrip("/")
+        self._fallback = fallback
+        self._client = client or httpx.Client()
+
+    def _fallback_parser(self):
+        """The local parser, built on first use.
+
+        Built lazily so constructing a RemoteParser costs nothing when the
+        host is doing the work, and kept after the first failure so a host
+        that is down does not rebuild (and reload) Docling per document.
+        """
+        if self._fallback is None:
+            self._fallback = DoclingParser()
+        return self._fallback
+
+    def parse(self, path: Path) -> ParsedDocument:
+        if not self._url:
+            # No url configured. Returning early is not just an optimisation:
+            # httpx resolves "" + "/parse" as a *relative* URL, so without
+            # this an unset PARSER_URL would still build and send a request
+            # that could only fail.
+            return self._fallback_parser().parse(path)
+        try:
+            response = self._client.post(
+                f"{self._url}/parse", content=path.read_bytes(),
+                headers={"X-Filename": path.name}, timeout=PARSE_TIMEOUT)
+            response.raise_for_status()
+            return from_dict(response.json())
+        except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
+            log.warning("host parser at %s failed on %s (%s); parsing "
+                        "in-process", self._url, path.name, exc)
+            return self._fallback_parser().parse(path)
+
+
+def build_parser():
+    """RemoteParser when PARSER_URL is set, otherwise local Docling."""
+    return RemoteParser() if PARSER_URL else DoclingParser()

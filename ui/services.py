@@ -11,7 +11,7 @@ import httpx
 import streamlit as st
 
 from core.config import Config
-from ingestion.parser import DoclingParser
+from ingestion.parser import build_parser
 from ingestion.chunkers.registry import build_chunker
 from ingestion.pipeline import Pipeline
 from ingestion.storage import Storage
@@ -63,7 +63,11 @@ def build_services():
     # seconds, and the page should render while that happens.
     threading.Thread(target=_warm, daemon=True, name="warm-models").start()
 
-    pipeline = Pipeline(DoclingParser(), build_chunker(cfg.chunking),
+    # build_parser() returns RemoteParser when PARSER_URL is set, so Docling
+    # runs on the host GPU (host_server.py) instead of the container's CPU —
+    # ~30 min for a 300-page book there against minutes here. The reranker
+    # picks up RERANKER_URL by itself.
+    pipeline = Pipeline(build_parser(), build_chunker(cfg.chunking),
                         embedder, store)
     worker = IngestWorker(storage, registry, pipeline)
     worker.start()   # resets stale PROCESSING rows on startup

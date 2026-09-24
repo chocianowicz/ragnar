@@ -43,9 +43,18 @@ class IngestWorker:
             if not path.exists():
                 raise FileNotFoundError(f"{doc.filename} missing from inbox")
 
+            # A cached parse (from a prior ingest of this exact content, keyed
+            # by the content-hash doc_id) lets a re-chunk skip Docling
+            # entirely. Only write the converted markdown and the cache on a
+            # fresh parse: on a cache hit both are already correct on disk,
+            # and read_parsed returns empty markdown, so writing it back would
+            # blank the converted file.
+            cached = self._storage.read_parsed(doc.doc_id)
             result = self._pipeline.ingest(path, doc.doc_id,
-                                           filename=doc.filename)
-            self._storage.write_converted(doc.doc_id, result.markdown)
+                                           filename=doc.filename, parsed=cached)
+            if cached is None:
+                self._storage.write_converted(doc.doc_id, result.markdown)
+                self._storage.write_parsed(doc.doc_id, result.parsed)
             self._storage.archive(path, doc.doc_id, filename=doc.filename)
             self._registry.mark_done(doc.doc_id, result.chunk_count)
         except Exception as exc:

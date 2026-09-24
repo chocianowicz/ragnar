@@ -25,6 +25,27 @@ services:
       QDRANT_URL: http://qdrant:6333
       HF_TOKEN: ${HF_TOKEN:-}
       HF_HOME: /cache/huggingface
+      # host_server.py on the Mac, where the reranker and Docling run on the
+      # GPU. Docker on macOS cannot reach Metal, so the container would
+      # otherwise do both on CPU (~30 min per 300-page book, 10.34s per
+      # rerank of 30 candidates, against 1.48s for the same rerank on the
+      # host GPU).
+      #
+      # ${VAR-default}, not ${VAR:-default}: an empty value in .env disables
+      # the remote path deliberately (the clients read "" as unset), while an
+      # unset one still gets the default. Both clients fall back to
+      # in-process CPU when the host service is unreachable, so the app keeps
+      # working — just slower — when it is not running.
+      PARSER_URL: ${PARSER_URL-http://host.docker.internal:8007}
+      RERANKER_URL: ${RERANKER_URL-http://host.docker.internal:8007}
+      # Docling's AcceleratorOptions reads this directly (env_prefix
+      # "DOCLING_"). Its default is 4 regardless of host size. 8 assumes
+      # Docker Desktop's VM has been given at least that many CPUs — check
+      # with `docker compose exec app nproc` and match this to what is
+      # actually available; asking for more threads than the VM has only adds
+      # scheduling overhead. Only affects the in-container fallback path,
+      # since a host parse runs in host_server.py instead.
+      DOCLING_NUM_THREADS: ${DOCLING_NUM_THREADS-8}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
