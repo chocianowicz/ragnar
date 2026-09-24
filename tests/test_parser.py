@@ -1,5 +1,6 @@
 import pytest
 from pathlib import Path
+from docling.datamodel.pipeline_options import OcrMode
 from ingestion.parser import DoclingParser
 
 FIXTURE = Path("tests/fixtures/sample.pdf")
@@ -30,6 +31,26 @@ def test_default_converter_has_ocr_disabled():
     converter = _default_converter()
     pdf_options = converter.format_to_options[InputFormat.PDF]
     assert pdf_options.pipeline_options.do_ocr is False
+
+
+def test_ocr_converter_ocrs_every_page():
+    """RapidOCR segments the page itself and comes back with nothing when it
+    finds no regions — a one-page scanned PDF measured 0 characters on this
+    machine until the mode was set to FULL_PAGE, 1,448 after. This converter
+    only runs on documents that already looked empty, so the tradeoff (OCR
+    over the whole page rather than over detected regions) is one it should
+    take, and Docling defaulting to region detection is what made it silent.
+
+    Asserted as the mode rather than force_full_page_ocr, which Docling has
+    deprecated in favour of it."""
+    from ingestion.parser import _ocr_converter
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import OcrMode
+
+    converter = _ocr_converter()
+    pdf_options = converter.format_to_options[InputFormat.PDF]
+    assert pdf_options.pipeline_options.do_ocr is True
+    assert pdf_options.pipeline_options.ocr_options.mode is OcrMode.FULL_PAGE
 
 
 class FakeTableItem:
@@ -73,7 +94,7 @@ def test_ocr_fallback_reads_the_whole_page():
     from ingestion.parser import _ocr_converter
 
     options = _ocr_converter().format_to_options[InputFormat.PDF].pipeline_options
-    assert options.do_ocr and options.ocr_options.force_full_page_ocr
+    assert options.do_ocr and options.ocr_options.mode == OcrMode.FULL_PAGE
 
 
 def test_ocr_fallback_uses_the_mac_gpu_only_where_there_is_one(monkeypatch):
@@ -86,10 +107,10 @@ def test_ocr_fallback_uses_the_mac_gpu_only_where_there_is_one(monkeypatch):
                 .pipeline_options.ocr_options)
 
     on_mac = ocr(True)
-    assert on_mac.backend == "torch" and on_mac.force_full_page_ocr
+    assert on_mac.backend == "torch" and on_mac.mode == OcrMode.FULL_PAGE
     assert on_mac.rapidocr_params == {"EngineConfig.torch.use_mps": True}
     elsewhere = ocr(False)
-    assert elsewhere.force_full_page_ocr
+    assert elsewhere.mode == OcrMode.FULL_PAGE
     assert "EngineConfig.torch.use_mps" not in (
         getattr(elsewhere, "rapidocr_params", None) or {})
 

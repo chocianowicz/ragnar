@@ -6,7 +6,11 @@
 # python
 __pycache__/
 *.pyc
-.venv/
+# No trailing slash: a trailing slash matches only a directory, so a
+# *symlink* named .venv (e.g. one pointing at another worktree's venv)
+# slipped past this once and was committed with a hardcoded absolute path
+# in it.
+.venv
 .pytest_cache/
 dist/
 build/

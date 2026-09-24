@@ -16,6 +16,8 @@ class StubDoc:
     def __init__(self, markdown, pages=1):
         self._markdown = markdown
         self._pages = pages
+        # Docling keys pages by page number; the parser counts them.
+        self.pages = {n: None for n in range(1, pages + 1)}
 
     def export_to_markdown(self):
         return self._markdown

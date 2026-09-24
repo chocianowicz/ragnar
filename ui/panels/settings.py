@@ -115,7 +115,6 @@ def render(svc) -> dict:
         thorough = bool(prefs.get("thorough", True))
         follow_up = bool(prefs.get("follow_up", True))
         self_correct = bool(prefs.get("self_correct", False))
-        broaden = bool(prefs.get("broaden", True))
 
         if admin:
             st.markdown("**Retrieval**")
@@ -183,7 +182,13 @@ def render(svc) -> dict:
                      "typed and, if the first pass comes back thin, looks "
                      "for what is missing and searches again. For questions "
                      "your documents phrase differently than you do, or that "
-                     "need two passages. The trace shows what it did.",
+                     "need two passages.\n\nWhen the documents still do not "
+                     "answer, tries the broader group, region or category "
+                     "the subject belongs to, but only if this chat or the "
+                     "documents state that it belongs there. Such an answer "
+                     "says it is indirect. This costs one more model call, "
+                     "and only on a question that would otherwise be "
+                     "refused. The trace shows what it did.",
             )
             prefs.set("thorough", bool(thorough))
             follow_up = st.checkbox(
@@ -208,17 +213,6 @@ def render(svc) -> dict:
                      "again if not.",
             )
             prefs.set("self_correct", bool(self_correct))
-            broaden = st.checkbox(
-                "Answer through a broader subject", value=broaden,
-                help="On by default. Costs nothing on a question the "
-                     "documents answer, and one model call plus one or two "
-                     "searches on one they do not.\n\nWhen nothing is found "
-                     "for, say, Poland, tries the EU instead, but only if "
-                     "this chat or the documents establish that Poland is in "
-                     "the EU. The answer says it is indirect, and the trace "
-                     "marks a link that came from the chat.",
-            )
-            prefs.set("broaden", bool(broaden))
 
             _render_ingestion(svc, cfg, prefs)
             _render_diagnostics(svc, cfg)
@@ -229,12 +223,14 @@ def render(svc) -> dict:
         "model": model, "temperature": temperature,
         "floor": floor, "candidates": candidates,
         "use_reranker": use_reranker, "follow_up": follow_up,
-        # "Rephrase the question" is the two stages with a case for
-        # them; self_correct stays separately switchable until there is
-        # evidence either way. The stored pref key stays "thorough" so
-        # the rename does not reset anyone's saved choice.
+        # "Rephrase the question" is every stage that searches harder
+        # with a case for it: rewordings, a follow-up hop, and a broader
+        # subject after a refusal. self_correct stays separately
+        # switchable until there is evidence either way. The stored pref
+        # key stays "thorough" so the rename does not reset anyone's
+        # saved choice.
         "multi_query": thorough, "multi_hop": thorough,
-        "self_correct": self_correct, "broaden": broaden,
+        "broaden": thorough, "self_correct": self_correct,
     }
 
 
