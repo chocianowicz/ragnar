@@ -32,6 +32,26 @@ def test_default_converter_has_ocr_disabled():
     assert pdf_options.pipeline_options.do_ocr is False
 
 
+def test_ocr_converter_ocrs_every_page():
+    """RapidOCR segments the page itself and comes back with nothing when it
+    finds no regions — a one-page scanned PDF measured 0 characters on this
+    machine until the mode was set to FULL_PAGE, 1,448 after. This converter
+    only runs on documents that already looked empty, so the tradeoff (OCR
+    over the whole page rather than over detected regions) is one it should
+    take, and Docling defaulting to region detection is what made it silent.
+
+    Asserted as the mode rather than force_full_page_ocr, which Docling has
+    deprecated in favour of it."""
+    from ingestion.parser import _ocr_converter
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import OcrMode
+
+    converter = _ocr_converter()
+    pdf_options = converter.format_to_options[InputFormat.PDF]
+    assert pdf_options.pipeline_options.do_ocr is True
+    assert pdf_options.pipeline_options.ocr_options.mode is OcrMode.FULL_PAGE
+
+
 class FakeTableItem:
     def __init__(self, df):
         self._df = df
