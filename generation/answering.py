@@ -15,8 +15,8 @@ from dataclasses import dataclass
 
 from generation import broaden, followup
 from generation.answerer import (
-    AnswerMode, build_citations, citation_labels, classify, declined,
-    no_results_message,
+    NO_RESULTS_MESSAGE, AnswerMode, build_citations, citation_labels,
+    classify, declined, no_results_message,
 )
 from generation.guards import aggregation_refusal
 from generation.prompts import NO_ANSWER
@@ -111,6 +111,27 @@ def answer(job, question: str, *, history: list[dict],
         job.append(aggregation_refusal(outcome.results))
         return
 
+    if settings.broaden:
+        # Passages reaching the model is not the same as passages about the
+        # question: with the re-ranker off, five always do. If none of them
+        # names the question's subject, a normal answer could only come
+        # from applying them to it on the model's own authority, unmarked
+        # and unexplained. So that case goes to the indirect path, which
+        # needs a proven link and shows its reasoning, or is refused.
+        job.status = "Checking the passages are about the question"
+        names = broaden.subject(llm, search_question, model=settings.model)
+        if names and not broaden.mentioned(names, outcome.results):
+            job.trace["missing_subject"] = names[0]
+            if _indirect(job, question, search_question, history=history,
+                         settings=settings, search=search, answerer=answerer,
+                         llm=llm, publish=publish, common=common,
+                         subject_name=names[0]):
+                return
+            job.append(f"{NO_RESULTS_MESSAGE} None of the passages found "
+                       f"mention {names[0]}.")
+            job.trace["related"] = citation_labels(outcome.results)
+            return
+
     job.citations = build_citations(outcome.results, publish=publish)
     job.status = "Writing the answer"
 
@@ -163,7 +184,7 @@ def _stream(job, pieces) -> bool:
 
 def _indirect(job, question: str, search_question: str, *, history,
               settings: Settings, search, answerer, llm, publish,
-              common: dict) -> bool:
+              common: dict, subject_name: str | None = None) -> bool:
     """Try to answer through a broader subject; True if it did.
 
     Runs only after a refusal, and leaves `job` untouched apart from the
@@ -176,7 +197,8 @@ def _indirect(job, question: str, search_question: str, *, history,
     job.status = "Looking for a broader subject the documents cover"
     bridge, found = broaden.attempt(search_question, history, llm=llm,
                                     search=search, typed=question,
-                                    model=settings.model, **common)
+                                    model=settings.model,
+                                    subject_name=subject_name, **common)
     if bridge is None:
         job.trace["broader_attempt"] = found
         return False
@@ -195,4 +217,5 @@ def _indirect(job, question: str, search_question: str, *, history,
 
     job.trace["indirect"] = bridge.as_dict()
     job.trace["indirect"]["search"] = found.trace.as_dict()
+    job.trace["indirect"]["found_citations"] = citation_labels(found.results)
     return True

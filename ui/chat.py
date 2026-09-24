@@ -1,4 +1,5 @@
 """Rendering the conversation: transcript, sources and the trace."""
+import re
 from urllib.parse import quote
 
 import streamlit as st
@@ -133,37 +134,58 @@ def render_trace(trace, key: str) -> None:
                 st.caption(f"⚠ {note}")
 
 
-def _render_indirect(trace: dict) -> None:
-    """How an answer reached through a broader subject was connected.
+def _plain(text) -> str:
+    """Model output made safe to embed in st.markdown: every character
+    markdown could read as syntax is escaped, so it renders as written."""
+    return re.sub(r"([\\`*_{}\[\]()#+\-.!|<>~])", r"\\\1", str(text))
 
-    The link is the one thing in such an answer that may not come from the
-    documents, so where it came from is stated every time, and a link that
-    rests on the chat alone is marked as such.
+
+def _render_indirect(trace: dict) -> None:
+    """The reasoning behind an answer the documents do not give directly.
+
+    Set out as the steps it took, because the answer combines two facts
+    from different places: what the documents say about a broader subject,
+    and the link from the question's subject to it. Each step says where
+    its fact came from, and a link resting on the chat alone is marked.
     """
     indirect = trace.get("indirect")
+    missing = (indirect or {}).get("subject") or trace.get("missing_subject")
     if not indirect:
+        if missing or trace.get("broader_attempt"):
+            st.divider()
+        if missing:
+            st.markdown(f"None of the passages found mention "
+                        f"**{_plain(missing)}**, so they were not used to "
+                        f"answer.")
         if trace.get("broader_attempt"):
             st.caption("Also tried a broader subject: "
                        + trace["broader_attempt"])
         return
 
+    subject = _plain(missing or "the subject of the question")
+    group = _plain(indirect.get("group") or "a broader subject")
     st.divider()
-    st.markdown("**Answered through a broader subject.** Nothing in the "
-                "documents addresses the question directly.")
-    # st.text throughout: model output, which must not inject markup.
-    st.caption("Searched instead for:")
-    st.text(indirect.get("broader_question", ""))
-    st.caption("Link used:")
-    st.text(indirect.get("link", ""))
+    st.markdown("**How the answer was reasoned**")
+    st.markdown(f"1. **Not in the documents:** nothing found is about "
+                f"{subject}.")
+    found = indirect.get("found_citations") or []
+    st.markdown(f"2. **In the documents:** {group}. Searched for "
+                f"“{_plain(indirect.get('broader_question', ''))}”"
+                + (f" and found it in {_plain(', '.join(found))}."
+                   if found else "."))
+    link = _plain(indirect.get("link", "").rstrip("."))
     if indirect.get("source") == "conversation":
         who = "you" if indirect.get("speaker") == "user" else "RAGnar"
+        st.markdown(f"3. **Link:** {link}.")
         st.caption(f"⚠ This link comes from this chat, not from the "
                    f"documents. Earlier, {who} said:")
         st.text(f"“{indirect.get('quote', '')}”")
     else:
         labels = indirect.get("link_citations") or []
-        st.caption("Link found in the documents"
-                   + (f": {', '.join(labels)}" if labels else "."))
+        st.markdown(f"3. **Link:** {link}. Found in the documents"
+                    + (f": {_plain(', '.join(labels))}." if labels else "."))
+    st.markdown(f"4. **So** what the documents say about {group} is "
+                f"applied to {subject}.")
 
 
 def render_transcript(messages: list[dict]) -> None:
