@@ -243,8 +243,8 @@ Everything else is a deployment choice — set once, then left — and lives beh
 | Re-rank results | on | Off is faster, less precise, and **disables the relevance floor** |
 | Candidates considered | 25 | Passages fetched before re-ranking picks the best few. Only shown when re-ranking is on: without it the top few are kept as the search ranked them and the pool is never used |
 | Temperature | 0 | Higher wanders further from the excerpts |
-| Rephrase the question | on | Searches several rewordings *beside* your own wording, and searches again if the first pass is thin. One or two extra model calls |
-| Remember context | on | Resolves what a follow-up refers to before searching. One model call per follow-up |
+| Rephrase the question | on | Searches several rewordings *beside* your own wording, and searches again if the first pass is thin. After a refusal, also tries the broader group the subject belongs to, if the chat or the documents state the link; that answer is marked indirect. One or two extra model calls, one more on a refusal |
+| Remember context | on | Resolves what a follow-up refers to before searching, and lets the answer see the recent chat. Off, each question stands alone and the chat cannot supply a link for an indirect answer. One model call per follow-up |
 | Check the draft answer | off | Drafts, judges whether the excerpts support it, searches again if not. Two model calls, and no golden-set evidence yet that it helps |
 | Chunk size | 500 tokens | Target size per chunk, 50-token overlap |
 | Table rows per chunk | 20 | Rows per table chunk, header repeated in each |
