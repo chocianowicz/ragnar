@@ -413,3 +413,17 @@ def test_without_remember_context_the_chat_cannot_supply_a_link():
 def test_a_subject_folded_onto_one_line_still_yields_both_names():
     llm = ScriptedLLM(["Subject: Polski / English: Poland"])
     assert broaden.subject(llm, "q") == ["Polski", "Poland"]
+
+
+def test_the_missing_subject_refusal_is_in_the_language_of_the_question():
+    question = "Jaki jest cel neutralności klimatycznej Polski?"
+    eu = _found("EU: climate neutrality by 2050")
+    search = ByQuestionSearch({question: eu})
+
+    job, _ = _run(search, question=question,
+                  settings=_settings(use_reranker=False),
+                  llm=ScriptedLLM(["Subject: Polski\nEnglish: Poland",
+                                   PROPOSAL]))
+
+    assert job.text.startswith("Nie udało się znaleźć odpowiedzi")
+    assert "(„Polski”)" in job.text

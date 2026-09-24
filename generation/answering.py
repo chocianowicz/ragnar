@@ -13,10 +13,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from generation import broaden, followup
+from generation import broaden, followup, language
 from generation.answerer import (
-    NO_RESULTS_MESSAGE, AnswerMode, build_citations, citation_labels,
-    classify, declined, no_results_message,
+    AnswerMode, build_citations, citation_labels, classify, declined,
+    no_results_message,
 )
 from generation.guards import aggregation_refusal
 from generation.prompts import NO_ANSWER
@@ -64,6 +64,10 @@ def answer(job, question: str, *, history: list[dict],
     if not settings.follow_up:
         history = []
 
+    # What the user typed decides the language of anything the app writes
+    # itself; the model is told to follow it too.
+    lang = language.of(question)
+
     search_question, resolved = question, False
     if history and settings.follow_up:
         job.status = "Working out what the question refers to"
@@ -104,11 +108,13 @@ def answer(job, question: str, *, history: list[dict],
         # Naming those documents is the difference between "the index is
         # empty on this" and "the index covers this area but not your
         # question" — which is what the user needs to know next.
-        job.append(no_results_message(outcome.related))
+        _refuse(job, question, no_results_message(outcome.related, lang=lang),
+                lang, llm=llm, settings=settings, results=outcome.related)
         job.trace["related"] = citation_labels(outcome.related)
         return
     if mode is AnswerMode.AGGREGATION_REFUSED:
-        job.append(aggregation_refusal(outcome.results))
+        _refuse(job, question, aggregation_refusal(outcome.results, lang),
+                lang, llm=llm, settings=settings, results=outcome.results)
         return
 
     if settings.broaden:
@@ -127,8 +133,10 @@ def answer(job, question: str, *, history: list[dict],
                          llm=llm, publish=publish, common=common,
                          subject_name=names[0]):
                 return
-            job.append(f"{NO_RESULTS_MESSAGE} None of the passages found "
-                       f"mention {names[0]}.")
+            _refuse(job, question, language.text(lang, "no_answer") + " "
+                    + language.text(lang, "missing_subject",
+                                    subject=names[0]),
+                    lang, llm=llm, settings=settings, keep=[names[0]])
             job.trace["related"] = citation_labels(outcome.results)
             return
 
@@ -149,9 +157,33 @@ def answer(job, question: str, *, history: list[dict],
                  settings=settings, search=search, answerer=answerer,
                  llm=llm, publish=publish, common=common):
         return
-    job.append(no_results_message(outcome.results, model_declined=True))
+    _refuse(job, question,
+            no_results_message(outcome.results, model_declined=True,
+                               lang=lang),
+            lang, llm=llm, settings=settings, results=outcome.results)
     job.trace["model_declined"] = True
     job.trace["related"] = citation_labels(outcome.results)
+
+
+def _refuse(job, question: str, message: str, lang: str, *, llm,
+            settings: Settings, results=(),
+            keep: list[str] | None = None) -> None:
+    """Append a refusal, in the language the question was asked in.
+
+    English and Polish refusals are already written in their language.
+    Any other language is translated, keeping every file name and page
+    the refusal names (taken from `results`, the passages it names), and
+    anything in `keep`; see generation/language.py.
+    """
+    if lang == language.OTHER:
+        job.status = "Writing the reply in your language"
+        names = {name for r in results
+                 for name in (r.chunk.citation_label(), r.chunk.filename)}
+        message = language.translate(
+            llm, question, message,
+            [n for n in names if n in message] + (keep or []),
+            model=settings.model)
+    job.append(message)
 
 
 def _stream(job, pieces) -> bool:
