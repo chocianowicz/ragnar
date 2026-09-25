@@ -25,7 +25,7 @@ collection, floor, stages), so two runs can't be mixed in one file.
 
 ### Calibrating the similarity floor
 
-    python eval/run_eval.py --calibrate --retrieval-only --multi-query --floors 0.40:0.80:0.01
+    python eval/run_eval.py --calibrate --retrieval-only --multi-query --floors 0.01:0.99:0.01
 
 Run it after a re-ingest, since reranker scores depend on the chunks, and
 after the golden check (below) is reviewed. Retrieval runs once, and every
@@ -140,29 +140,19 @@ entries were flagged:
 - 2 expected answers were incomplete and were corrected.
 - One private case was dropped.
 
-The current `retrieval.score_floor` (0.55, in `config.yaml`) was chosen by
-sweeping candidate floors with `--calibrate` and picking the lowest floor
-that reached the best observed refusal_accuracy without lowering
-citation_accuracy. With only 5 cases this is a crude signal — it separates
-the two out-of-corpus questions from the three in-corpus ones cleanly at
-this floor, but a single mis-scored case would shift the whole picture.
-Treat it as a starting point, not a validated production threshold.
+`retrieval.score_floor` is 0.49, calibrated on 2026-09-25 against the
+222-case set with `--calibrate --retrieval-only --multi-query --floors
+0.01:0.99:0.01`. No floor gives a flat stretch of low `missed`: it falls
+steadily while `false` rises. 0.49 is the lowest floor of the 0.49-0.54
+plateau (missed 0.314, false 0.146, refusal accuracy 0.815, inside the 95%
+range of the best floor, 0.833 at 0.12-0.13). The UI's Strict and Lenient
+stops are the lowest floors of the neighbouring plateaus, 0.64 and 0.18.
 
-Two reasons to trust it even less than that paragraph suggests:
-
-- **The sweep could not have produced 0.55.** It stepped by 0.1, so the
-  grid ran 0.5, 0.6, 0.7 — the shipped value was never on it. The default
-  is now `0.40:0.80:0.05`, overridable with `--floors start:stop:step`.
-- **`sample.pdf` is not in the indexed collection.** The harness searches
-  whatever is live, so the three in-corpus cases were scored against a
-  corpus that cannot contain their answers, and every number in the run
-  was meaningless. `run_eval.py` now refuses to score in that state and
-  names the missing sources. Use `--golden` to keep a real-corpus set
-  alongside the fixture one.
-
-So the honest status of `score_floor` is: hand-set from live observation,
-never validated by this harness. Growing the golden set is what changes
-that.
+The scores are probabilities. Until 2026-09-25 the reranker applied a
+sigmoid on top of CrossEncoder.predict's own, which squeezed every score
+into 0.50-0.73; floors from before then (0.55, 0.62) are on that scale,
+where x maps to ln(x / (1 - x)) here. Rankings, and so refusals at an
+equivalent floor, did not change.
 
 ## Comparing configurations
 

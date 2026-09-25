@@ -99,7 +99,7 @@ def test_remote_scores_are_used_without_touching_the_local_model():
     def handler(request: httpx.Request) -> httpx.Response:
         seen["url"] = str(request.url)
         seen["payload"] = json.loads(request.read())
-        return httpx.Response(200, json={"scores": [2.0, -2.0]})
+        return httpx.Response(200, json={"scores": [0.88, 0.12]})
 
     reranker = BGEReranker(url="http://host:8007", client=_client(handler),
                            model=_explode_if_used())
@@ -109,21 +109,21 @@ def test_remote_scores_are_used_without_touching_the_local_model():
     assert seen["url"] == "http://host:8007/rerank"
     assert seen["payload"] == {"query": "q", "texts": ["first", "second"],
                                "max_length": 512}
-    # Raw logits came back, and the sigmoid still ran on this side.
+    # The host's scores are used as they come: already probabilities.
     assert ranked[0].chunk.text == "first"
-    assert ranked[0].score == pytest.approx(0.880797, abs=1e-6)
+    assert ranked[0].score == pytest.approx(0.88)
 
 
 def test_the_remote_path_and_the_local_path_agree_on_the_score():
-    """The HTTP hop must not change the numbers: identical logits in, and the
-    sigmoid and the top_k cut applied here on both paths."""
+    """The HTTP hop must not change the numbers: identical scores in, and
+    the sort and the top_k cut applied here on both paths."""
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"scores": [1.5, -0.5, 0.0]})
+        return httpx.Response(200, json={"scores": [0.8, 0.1, 0.4]})
 
     candidates = [_result("a"), _result("b"), _result("c")]
     remote = BGEReranker(url="http://host:8007", client=_client(handler),
                          model=_explode_if_used()).rerank("q", candidates, 3)
-    local = BGEReranker(url="", model=RecordingModel([1.5, -0.5, 0.0])
+    local = BGEReranker(url="", model=RecordingModel([0.8, 0.1, 0.4])
                         ).rerank("q", candidates, 3)
 
     assert [r.chunk.text for r in remote] == [r.chunk.text for r in local]

@@ -11,7 +11,7 @@ Usage:
         --golden eval/golden_hybridqa_draft.yaml
     python eval/run_eval.py --calibrate       # sweep the similarity floor
     python eval/run_eval.py --golden mine.yaml
-    python eval/run_eval.py --calibrate --floors 0.45:0.70:0.01
+    python eval/run_eval.py --calibrate --floors 0.30:0.70:0.01
 """
 import argparse
 import json
@@ -353,7 +353,7 @@ def parse_floors(spec: str) -> list[float]:
     return floors
 
 
-DEFAULT_FLOORS = "0.40:0.80:0.05"
+DEFAULT_FLOORS = "0.05:0.95:0.05"
 
 
 def at_floor(cases: list[dict], floor: float) -> list[dict]:

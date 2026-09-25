@@ -132,7 +132,7 @@ RAGnar decides whether it *can* answer before the model is involved:
 question
    └─▶ embed ─▶ retrieve 25 ─▶ rerank ─▶ top 5
                                           │
-        best score below 0.55? ──yes──▶ refuse, and list related documents
+        best score below 0.49? ──yes──▶ refuse, and list related documents
                                           │
      aggregation words + mostly ──yes──▶ refuse, and name the file and sheet
      table chunks?                        │
@@ -302,7 +302,7 @@ per question:
 | Setting | Default | What it changes |
 |---|---|---|
 | Answer model | `qwen2.5:14b` | Which local model writes the answer |
-| Strictness | Balanced (`0.55`) | How sure the app must be before it answers at all |
+| Strictness | Balanced (`0.49`) | How sure the app must be before it answers at all |
 
 Everything else is a deployment choice — set once, then left — and lives behind
 **Show advanced settings**:
@@ -323,11 +323,18 @@ phrasings alongside it and fuses the results, never substituting for it — the 
 half of hybrid search matches on your own identifiers, so replacing your wording could
 only lose documents.
 
-Strictness is the one to understand before touching. Its three stops are **provisional,
-not calibrated**: on a real corpus, out-of-corpus questions scored 0.50–0.503 and
-relevant ones 0.578 and up, so Balanced at 0.55 sits in that gap with margin either
-side. That is five data points, not a golden set. Lenient turns refusals into confident
-guesses.
+Strictness is the one to understand before touching. The floor is the reranker's
+probability that a passage is relevant, and the three stops were calibrated on the
+222-case golden set:
+
+| Stop | Floor | Out-of-corpus questions answered | Answerable questions refused |
+|---|---|---|---|
+| Strict | 0.64 | 24% | 19% |
+| Balanced | 0.49 | 31% | 15% |
+| Lenient | 0.18 | 49% | 8% |
+
+Those are retrieval alone. The answer model declines most of what gets through, so
+end to end at Balanced 12% of out-of-corpus questions get an answer.
 
 ---
 
@@ -368,7 +375,7 @@ guesses.
 | `retrieval.hybrid` | `true` | Pair the dense vector with a lexical one |
 | `retrieval.candidates` | `25` | Fetched before reranking |
 | `retrieval.top_k` | `5` | Kept after reranking |
-| `retrieval.score_floor` | `0.55` | Below this, refuse |
+| `retrieval.score_floor` | `0.49` | Below this, refuse |
 | `agentic.max_hops` | `2` | Extra searches when a first pass comes back thin |
 | `agentic.variants` | `3` | Alternative phrasings searched beside the original |
 

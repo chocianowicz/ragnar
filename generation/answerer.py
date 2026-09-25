@@ -21,16 +21,17 @@ NO_RESULTS_MESSAGE = (
 # that the refusal still reads as a refusal rather than a results page.
 NEAR_MISS_LIMIT = 3
 
-# Reranker scores are sigmoid(logit) (retrieval/reranker.py), so 0.5 is the
-# point where the cross-encoder has no opinion either way. Measured on the
-# real corpus, a question with no bearing on it at all pegs its entire
-# candidate list within 0.0002 of that midpoint, while a genuine near miss
-# reaches 0.503-0.578. Requiring real positive signal keeps the refusal
-# from manufacturing a connection the reranker did not find — which would
-# be worse than saying nothing, because the user goes and reads the
-# documents it named. The threshold is a property of the model's output
-# scale, not of the configured floor, so it survives recalibration.
-NEAR_MISS_MIN = 0.51
+# Reranker scores are the cross-encoder's probability that a passage is
+# relevant (retrieval/reranker.py). Measured on the real corpus, a question
+# with no bearing on it at all pegs its entire candidate list below 0.001,
+# while a genuine near miss reaches 0.012-0.31. Requiring real positive
+# signal keeps the refusal from manufacturing a connection the reranker did
+# not find — which would be worse than saying nothing, because the user goes
+# and reads the documents it named. The threshold is a property of the
+# model's output scale, not of the configured floor, so it survives
+# recalibration. (Those figures were measured as 0.5002 and 0.503-0.578
+# while a second sigmoid squeezed every score; this is the same cut-off.)
+NEAR_MISS_MIN = 0.04
 
 
 def _closest_labels(candidates: list[SearchResult]) -> list[str]:
