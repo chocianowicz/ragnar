@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from core.models import SearchResult
-from generation import injection
+from generation import injection, language
 from generation.guards import should_refuse_aggregation
 from generation.prompts import (
     INDIRECT_SYSTEM, NO_ANSWER, SYSTEM_PROMPT, build_indirect_prompt,
@@ -12,9 +12,7 @@ from generation.prompts import (
 # The opening sentence of every refusal. "Nothing relevant" would
 # contradict the near-miss sentence that can follow it — retrieval often
 # does find relevant material that simply does not answer the question.
-NO_RESULTS_MESSAGE = (
-    "I could not find an answer to this in the indexed documents."
-)
+NO_RESULTS_MESSAGE = language.text("en", "no_answer")
 
 # How many of the closest documents a refusal names. Three is enough to
 # say "the corpus covers this area, just not your question" and few enough
@@ -47,14 +45,16 @@ def _closest_labels(candidates: list[SearchResult]) -> list[str]:
     return [r.chunk.citation_label() for r in ranked[:NEAR_MISS_LIMIT]]
 
 
-def _join(labels: list[str]) -> str:
+def _join(labels: list[str], lang: str = "en") -> str:
     if len(labels) == 1:
         return labels[0]
-    return ", ".join(labels[:-1]) + " and " + labels[-1]
+    return (", ".join(labels[:-1]) + language.text(lang, "and")
+            + labels[-1])
 
 
 def no_results_message(candidates: list[SearchResult], *,
-                       model_declined: bool = False) -> str:
+                       model_declined: bool = False,
+                       lang: str = "en") -> str:
     """The refusal, naming the documents that came closest.
 
     A bare "nothing relevant" is wrong whenever retrieval found coherent
@@ -72,16 +72,17 @@ def no_results_message(candidates: list[SearchResult], *,
     different stages and must not describe each other: below the floor
     nothing was close enough to read, while a declined answer means the
     model read passages that cleared the floor and found no answer in them.
+
+    `lang` is the question's language (generation/language.py). The
+    wording is fixed per language, so the refusal stays deterministic.
     """
+    opening = language.text(lang, "no_answer")
     labels = _closest_labels(candidates)
     if not labels:
-        return NO_RESULTS_MESSAGE
-    listed = _join(labels)
-    if model_declined:
-        return (f"{NO_RESULTS_MESSAGE} The closest passages were in "
-                f"{listed}, but they do not answer it.")
-    return (f"{NO_RESULTS_MESSAGE} The closest passages were in {listed}, "
-            f"but none matched closely enough to answer from.")
+        return opening
+    listed = _join(labels, lang)
+    key = "near_miss_declined" if model_declined else "near_miss_floor"
+    return f"{opening} {language.text(lang, key, listed=listed)}"
 
 
 # How many prior messages are replayed to the model. Six is three

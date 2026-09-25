@@ -99,19 +99,17 @@ def should_refuse_aggregation(question: str,
     return _has_aggregation_intent(question) and _is_table_heavy(results)
 
 
-def aggregation_refusal(results: list[SearchResult]) -> str:
+def aggregation_refusal(results: list[SearchResult], lang: str = "en") -> str:
+    """The refusal, in the language of the question (generation/language)."""
+    from generation import language
+
     sources = []
     for r in results:
         label = r.chunk.filename
         if r.chunk.sheet:
-            label = f"{label} (sheet {r.chunk.sheet})"
+            label = language.text(lang, "sheet", filename=label,
+                                  sheet=r.chunk.sheet)
         if label not in sources:
             sources.append(label)
 
-    listed = ", ".join(sources)
-    return (
-        "This looks like a question that requires calculating across a whole "
-        "table. I can only read individual rows, so any total I gave you "
-        "could be wrong.\n\n"
-        f"The relevant data is in: {listed}"
-    )
+    return language.text(lang, "aggregation", listed=", ".join(sources))
