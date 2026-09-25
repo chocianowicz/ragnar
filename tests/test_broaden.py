@@ -15,7 +15,9 @@ from tests.fakes import FailingLLM, ScriptedLLM
 POLAND = "What is Poland's net zero target?"
 EU = "What is the EU's net zero target?"
 LINK = "Poland is a member state of the EU."
-PROPOSAL = f"Broader: {EU}\nLink: {LINK}\nQuote: Poland is a member of the EU"
+PROPOSAL = (f"Subject: Poland\nGroup: the EU\nBroader: {EU}\nLink: {LINK}\n"
+            f"Quote: Poland is a member of the EU")
+SUBJECT = "Subject: Poland\nEnglish: Poland"
 MEMBERSHIP_CHAT = [
     {"role": "user", "content": "Is Poland in the EU?"},
     {"role": "assistant", "content": "Yes, Poland is a member of the EU."},
@@ -55,7 +57,10 @@ class StubAnswerer:
         self._direct, self._indirect = list(direct), list(indirect)
         self.bridges = []
 
+        self.direct_calls = 0
+
     def stream(self, question, results, **kwargs):
+        self.direct_calls += 1
         yield from self._direct
 
     def stream_indirect(self, question, bridge, results, **kwargs):
@@ -257,26 +262,105 @@ def test_an_empty_scope_is_not_broadened():
 
 
 def test_a_direct_answer_never_broadens():
-    llm = ScriptedLLM([PROPOSAL])
+    llm = ScriptedLLM([SUBJECT, PROPOSAL])
     search = ByQuestionSearch({POLAND: _found("Poland: 2050", filename="pl.pdf")})
 
     job, answerer = _run(search, llm=llm,
                          answerer=StubAnswerer(direct=["Poland aims for 2050."]))
 
     assert job.text == "Poland aims for 2050."
-    assert llm.calls == []
+    assert _broaden_calls(llm) == []
     assert answerer.bridges == []
+    assert "missing_subject" not in job.trace
+
+
+# -- passages that never name the subject --------------------------------
+
+def test_passages_that_never_name_the_subject_go_to_the_indirect_path():
+    """With no floor, EU passages reach the model for a Poland question and
+    it answers "Poland, as part of the EU..." on its own authority. The
+    subject check sends that to the path that proves and shows the link."""
+    eu = _found("EU: climate neutrality by 2050")
+    search = ByQuestionSearch({POLAND: eu, EU: eu})
+    answerer = StubAnswerer(direct=["Poland, as part of the EU, aims..."])
+
+    job, _ = _run(search, history=MEMBERSHIP_CHAT, answerer=answerer,
+                  llm=ScriptedLLM(["", SUBJECT, PROPOSAL]))
+
+    assert answerer.direct_calls == 0           # never answered unmarked
+    assert job.trace["missing_subject"] == "Poland"
+    indirect = job.trace["indirect"]
+    assert (indirect["subject"], indirect["group"]) == ("Poland", "the EU")
+    assert indirect["source"] == "conversation"
+
+
+def test_without_a_link_they_are_refused_and_say_why():
+    eu = _found("EU: climate neutrality by 2050")
+    search = ByQuestionSearch({POLAND: eu, EU: eu})
+    answerer = StubAnswerer(direct=["Poland, as part of the EU, aims..."])
+
+    job, _ = _run(search, answerer=answerer,
+                  settings=_settings(use_reranker=False),
+                  llm=ScriptedLLM([SUBJECT, PROPOSAL]))
+
+    assert answerer.direct_calls == 0
+    assert "None of the passages found mention Poland." in job.text
+    assert job.citations == []
+    assert "re-ranking off" in job.trace["broader_attempt"]
+
+
+def test_a_general_question_is_answered_normally():
+    search = ByQuestionSearch({POLAND: _found("Net zero means...")})
+
+    job, answerer = _run(search, llm=ScriptedLLM(["Subject: none\nEnglish: none"]),
+                         answerer=StubAnswerer(direct=["Net zero means..."]))
+
+    assert job.text == "Net zero means..."
+    assert "missing_subject" not in job.trace
+
+
+def test_a_failed_subject_check_does_not_cost_the_answer():
+    search = ByQuestionSearch({POLAND: _found("Poland: 2050")})
+
+    job, _ = _run(search, llm=FailingLLM(),
+                  answerer=StubAnswerer(direct=["Poland aims for 2050."]))
+
+    assert job.text == "Poland aims for 2050."
+
+
+def test_broader_passages_that_never_name_the_group_are_not_used():
+    """With no floor the broader search always returns something."""
+    search = ByQuestionSearch({EU: _found("Korea's 2035 NDC")})
+
+    job, answerer = _run(search, history=MEMBERSHIP_CHAT)
+
+    assert answerer.bridges == []
+    assert "do not mention the EU" in job.trace["broader_attempt"]
+
+
+def test_mention_is_decided_by_word_stems():
+    def found(text, *names):
+        return broaden.mentioned(list(names), _found(text).results)
+
+    assert found("Poland's 2040 plan", "Poland")
+    assert not found("EU climate policy", "Poland")          # not "pol..."
+    assert found("the Korean 2035 NDC", "Republic of Korea")
+    assert found("the European Union target", "European Union")
+    assert not found("European targets", "European Union")
+    assert not found("Die polnische Regierung", "Polska", "Poland")
 
 
 # -- the model declined the direct passages, then broadening ------------
 
 def test_broadening_also_follows_a_declined_direct_answer():
-    """The floor let an EU passage through for the Poland question, and the
-    model rightly declined it; with the link, it is an answer after all."""
+    """The passages name Poland, so the subject check passes; the model
+    still finds no answer in them, and the link makes one after all."""
+    pl = _found("Poland: a national plan exists, target not stated")
     eu = _found("EU: climate neutrality by 2050")
-    search = ByQuestionSearch({POLAND: eu, EU: eu})
+    search = ByQuestionSearch({POLAND: pl, EU: eu})
 
-    job, _ = _run(search, history=MEMBERSHIP_CHAT)
+    job, _ = _run(search, history=MEMBERSHIP_CHAT,
+                  llm=ScriptedLLM(["", SUBJECT, PROPOSAL]))
 
     assert job.trace["indirect"]["source"] == "conversation"
     assert "model_declined" not in job.trace
@@ -324,3 +408,22 @@ def test_without_remember_context_the_chat_cannot_supply_a_link():
     assert "indirect" not in job.trace
     assert answerer.bridges == []
     assert "could not find" in job.text
+
+
+def test_a_subject_folded_onto_one_line_still_yields_both_names():
+    llm = ScriptedLLM(["Subject: Polski / English: Poland"])
+    assert broaden.subject(llm, "q") == ["Polski", "Poland"]
+
+
+def test_the_missing_subject_refusal_is_in_the_language_of_the_question():
+    question = "Jaki jest cel neutralności klimatycznej Polski?"
+    eu = _found("EU: climate neutrality by 2050")
+    search = ByQuestionSearch({question: eu})
+
+    job, _ = _run(search, question=question,
+                  settings=_settings(use_reranker=False),
+                  llm=ScriptedLLM(["Subject: Polski\nEnglish: Poland",
+                                   PROPOSAL]))
+
+    assert job.text.startswith("Nie udało się znaleźć odpowiedzi")
+    assert "(„Polski”)" in job.text

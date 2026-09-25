@@ -36,9 +36,12 @@ A document search found nothing about the subject of a question. You
 propose a broader subject the documents might cover instead, and the fact
 that links the two.
 
-Answer in exactly this form, three lines:
+Answer in exactly this form, five lines:
+Subject: <the specific thing the question is about, as written in it>
+Group: <the larger group, region or category the subject belongs to, or
+none>
 Broader: <the same question, asking for the same thing, but about the
-larger group, region or category the subject belongs to, or none>
+group, or none>
 Link: <one sentence stating that the subject belongs to it, or none>
 Quote: <the exact words from the conversation or the question that state
 the link, copied character for character, or none>
@@ -52,6 +55,17 @@ Rules:
   question someone asked establishes nothing. If nothing there states the
   link, write "Quote: none". The link will be checked, so do not invent one.
 - If there is no sensible broader subject, write "Broader: none".
+- The subject is the thing (a country, organisation, company, product),
+  never the topic asked about it. The group is a thing of the same kind
+  that contains it, never a topic.
+
+Example. Question: "What is Bavaria's renewable energy target?", after the
+user said "Bavaria is a state of Germany."
+Subject: Bavaria
+Group: Germany
+Broader: What is Germany's renewable energy target?
+Link: Bavaria is a state of Germany.
+Quote: Bavaria is a state of Germany
 """
 
 # How much conversation the proposal sees. The link, when the chat
@@ -67,12 +81,41 @@ LINK_RESULTS = 2
 
 _NONE = ("", "none", "n/a")
 
+SUBJECT_SYSTEM = """\
+You name the specific subject a question asks about: a country, region,
+organisation, company, sector, product or person. Not the topic, the
+subject: in "what is Norway's 2030 target?" it is Norway, not the target.
+
+Answer in exactly this form, two lines:
+Subject: <the subject, as written in the question, or none>
+English: <the same subject in English, or none>
+
+Write "none" when the question has no specific subject, such as a
+general or definitional question.
+
+Examples.
+
+Question: What is Bavaria's renewable energy target?
+Subject: Bavaria
+English: Bavaria
+
+Question: jaki jest cel emisyjny Niemiec?
+Subject: Niemiec
+English: Germany
+
+Question: What does net zero mean?
+Subject: none
+English: none
+"""
+
 
 @dataclass
 class Proposal:
     broader: str
     link: str
     quote: str | None
+    subject: str | None = None
+    group: str | None = None
 
 
 @dataclass
@@ -84,10 +127,14 @@ class Bridge:
     quote: str | None = None
     speaker: str | None = None           # "user" | "assistant", chat only
     link_results: list[SearchResult] = field(default_factory=list)
+    subject: str | None = None           # what the documents do not cover
+    group: str | None = None             # what they cover instead
 
     def as_dict(self) -> dict:
         """For the trace, which is persisted as JSON: labels, not chunks."""
         return {
+            "subject": self.subject,
+            "group": self.group,
             "broader_question": self.broader_question,
             "link": self.link,
             "source": self.source,
@@ -126,6 +173,8 @@ def propose(llm, question: str, history: list[dict] | None,
         logger.warning("broader-subject proposal failed: %s", exc)
         return None
 
+    subject = parse_tagged(raw or "", "Subject", "none")
+    group = parse_tagged(raw or "", "Group", "none")
     broader = parse_tagged(raw or "", "Broader", "none")
     link = parse_tagged(raw or "", "Link", "none")
     quote = parse_tagged(raw or "", "Quote", "none").strip().strip("\"'“”„")
@@ -134,7 +183,77 @@ def propose(llm, question: str, history: list[dict] | None,
     if _normalise(broader).rstrip("?.") == _normalise(question).rstrip("?."):
         return None               # not broader, just the question again
     return Proposal(broader=broader, link=link,
-                    quote=None if quote.lower() in _NONE else quote)
+                    quote=None if quote.lower() in _NONE else quote,
+                    subject=None if subject.lower() in _NONE else subject,
+                    group=None if group.lower() in _NONE else group)
+
+
+def subject(llm, question: str, model: str | None = None) -> list[str]:
+    """The question's specific subject, as written and in English.
+
+    Empty when the question has none, or when the model fails: a general
+    question is answered normally, and a failed check must not cost the
+    user an answer the passages may well support.
+    """
+    try:
+        raw = llm.generate(SUBJECT_SYSTEM, f"Question: {question}",
+                           model=model)
+    except Exception as exc:
+        logger.warning("subject check failed: %s", exc)
+        return []
+    names = []
+    for tag in ("Subject", "English"):
+        value = parse_tagged(raw or "", tag, "none")
+        # A model that folds both onto one line ("Polski / English:
+        # Poland") still yields both names.
+        for part in re.split(r"\s*/\s*(?:english:)?\s*", value,
+                             flags=re.IGNORECASE):
+            name = part.strip().strip("\"'“”„")
+            if name and name.lower() not in _NONE and name not in names:
+                names.append(name)
+    return names
+
+
+def _stems(name: str) -> list[str]:
+    """Word stems that identify `name` in running text.
+
+    One letter comes off longer words, so "Poland" also finds "Poland's"
+    and "Germany" finds "German", without "Pol" matching "policy". Words
+    under four letters ("EU", "UK") are kept whole and matched as words.
+    """
+    stems = []
+    for word in re.findall(r"\w+", name.casefold()):
+        if word in _GENERIC:
+            continue
+        stems.append(word[:-1] if len(word) > 5 else word)
+    return stems
+
+
+# Words that name the kind of thing rather than the thing: "the Republic
+# of Korea" is identified by "Korea", and "republic" appears everywhere.
+_GENERIC = {"the", "of", "and", "republic", "kingdom", "state", "states",
+            "united", "federal", "government", "company", "sector"}
+
+
+def mentioned(names: list[str], results: list[SearchResult]) -> bool:
+    """Whether any passage mentions any of `names`, decided in code.
+
+    This is the check that keeps the model from answering a question about
+    one subject out of passages about another: with the re-ranker off,
+    five passages always reach it, whatever they are about. A name counts
+    as mentioned if every one of its identifying stems starts a word in
+    some passage.
+    """
+    texts = [r.chunk.text.casefold() for r in results]
+    for name in names:
+        stems = _stems(name)
+        if not stems:
+            continue
+        for text in texts:
+            if all(re.search(rf"\b{re.escape(stem)}", text)
+                   for stem in stems):
+                return True
+    return False
 
 
 def _stated(needle: str, text: str) -> bool:
@@ -188,30 +307,38 @@ def quoted_in(quote: str | None, question: str,
 
 def attempt(question: str, history: list[dict] | None, *, llm, search,
             typed: str | None = None, model: str | None = None,
-            **search_kwargs):
+            subject_name: str | None = None, **search_kwargs):
     """(Bridge, SearchOutcome) for an indirect answer, or (None, note).
 
     `question` is what gets broadened, normally the resolved follow-up;
     `typed` is what the user actually wrote, the only form of the question
-    a quote may be matched against. `note` says why no indirect answer was
+    a quote may be matched against. `subject_name` is the subject already
+    found missing, when it is known. `note` says why no indirect answer was
     possible, for the trace: a refusal is more useful when it says what
     was also tried.
     """
     proposal = propose(llm, question, history, model=model)
     if proposal is None:
         return None, "no broader subject to try"
+    proposal.subject = subject_name or proposal.subject
 
     outcome = search.find(proposal.broader, **search_kwargs)
     if outcome.refused or not outcome.results:
         return None, (f"searched for “{proposal.broader}”, "
                       f"but nothing cleared the floor")
+    # With no floor the search returns five passages whatever they are
+    # about, so they only count as covering the group if they name it.
+    if proposal.group and not mentioned([proposal.group], outcome.results):
+        return None, (f"searched for “{proposal.broader}”, but the passages "
+                      f"found do not mention {proposal.group}")
 
     speaker = quoted_in(proposal.quote,
                         question if typed is None else typed, history)
     if speaker is not None:
         return Bridge(broader_question=proposal.broader, link=proposal.link,
                       source="conversation", quote=proposal.quote,
-                      speaker=speaker), outcome
+                      speaker=speaker, subject=proposal.subject,
+                      group=proposal.group), outcome
 
     if not search_kwargs.get("use_reranker", True):
         # Without the reranker there is no floor (retrieval/search.py), so
@@ -227,4 +354,5 @@ def attempt(question: str, history: list[dict] | None, *, llm, search,
                       f"nor the documents establish that {proposal.link.rstrip('.')}")
     return Bridge(broader_question=proposal.broader, link=proposal.link,
                   source="documents",
-                  link_results=linked.results[:LINK_RESULTS]), outcome
+                  link_results=linked.results[:LINK_RESULTS],
+                  subject=proposal.subject, group=proposal.group), outcome
