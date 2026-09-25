@@ -122,11 +122,11 @@ def test_unknown_paths_are_404(live_server):
 
 # ── /rerank ──────────────────────────────────────────────────────────────────
 
-def test_rerank_returns_raw_logits(live_server, fake_reranker):
+def test_rerank_returns_the_model_scores_unchanged(live_server, fake_reranker):
     status, body = post(live_server, "/rerank", rerank_body(),
                         {"Content-Type": "application/json"})
     assert status == 200
-    # Raw logits, not sigmoid-ed: the client owns that transform.
+    # Whatever predict returned (probabilities, for the real model).
     assert body == {"scores": [0.0, 1.0]}
     assert fake_reranker == [("q", ["a", "b"])]
 

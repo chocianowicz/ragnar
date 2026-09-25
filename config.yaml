@@ -26,14 +26,13 @@ chunking:
 retrieval:
   candidates: 25
   top_k: 5
-  # Calibrated 2026-09-24 on the 222-case golden set (--calibrate
-  # --retrieval-only --multi-query, GPU reranker). No floor had a flat
-  # stretch of low missed refusals; 0.62-0.63 is the first plateau where
-  # missed drops (0.49 -> 0.31) while refusal accuracy (0.815) stays inside
-  # the best floor's 95% range. Scores are sigmoid(probability):
-  # CrossEncoder.predict already applies a sigmoid and BGEReranker.rerank
-  # applies another, so 0.62 here is a cross-encoder probability of ~0.49.
-  score_floor: 0.62
+  # The cross-encoder's probability that a chunk is relevant. Calibrated
+  # 2026-09-25 on the 222-case golden set (--calibrate --retrieval-only
+  # --multi-query): the lowest floor of the 0.49-0.54 plateau, where
+  # out-of-corpus questions answered hold at 31% (49% at the old 0.55
+  # equivalent) and refusal accuracy is 0.815, inside the best floor's 95%
+  # range. The model's own refusals catch most of the rest: 12% end to end.
+  score_floor: 0.49
   # Pair the dense embedding with a lexical (sparse) one and fuse the two
   # by reciprocal rank. Dense vectors are poor at exact identifiers - a
   # CN code in a large reference table ranked 291st without this. Applies

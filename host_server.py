@@ -14,13 +14,14 @@ container cannot reach — the same arrangement Ollama already uses here
 
 Endpoints, one process:
 
-    POST /rerank   {query, texts, max_length}  -> {"scores": [raw logits]}
+    POST /rerank   {query, texts, max_length}  -> {"scores": [probabilities]}
     POST /parse    raw file bytes, X-Filename  -> to_dict(ParsedDocument)
     GET  /health                               -> which halves are loaded
 
-Returns raw logits, not finished scores. BGEReranker applies the sigmoid and
-the top_k cut itself, and keeping that math on the client side means the HTTP
-path and the in-process path run identical code from the model output onward.
+Returns CrossEncoder.predict's scores, which are already probabilities (it
+applies a sigmoid for this one-label model). BGEReranker does the sorting and
+the top_k cut itself, so the HTTP path and the in-process path run identical
+code from the model output onward.
 
 Every client falls back to in-process CPU when this is unreachable, so the app
 never breaks while this is down — it only gets slower.

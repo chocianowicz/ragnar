@@ -3,7 +3,7 @@
 "I could not find anything relevant" is false whenever retrieval found
 coherent passages that simply were not about the thing asked. On the real
 corpus, "What is Poland's net zero goal?" returns EU-wide climate-neutrality
-material at 0.517 — relevant to the topic, silent on the country. Telling
+material at 0.068 — relevant to the topic, silent on the country. Telling
 the user only "nothing relevant" sends them looking for a bug.
 
 Naming the closest documents is safe in a way that quoting them is not: a
@@ -14,7 +14,7 @@ from core.models import Chunk, SearchResult
 from generation.answerer import NO_RESULTS_MESSAGE, no_results_message
 
 
-def _result(filename, page, score=0.52):
+def _result(filename, page, score=0.08):
     return SearchResult(
         chunk=Chunk(doc_id=filename, filename=filename, text="t",
                     chunk_index=0, page=page),
@@ -57,9 +57,9 @@ def test_documents_are_deduplicated_keeping_the_best_page():
     """Five chunks from one PDF is one document to go and read, and the
     page worth naming is the closest-scoring one."""
     message = no_results_message([
-        _result("EU NDC.pdf", 46, score=0.52),
-        _result("EU NDC.pdf", 24, score=0.51),
-        _result("EU NDC.pdf", 33, score=0.50),
+        _result("EU NDC.pdf", 46, score=0.08),
+        _result("EU NDC.pdf", 24, score=0.06),
+        _result("EU NDC.pdf", 33, score=0.05),
     ])
 
     assert message.count("EU NDC.pdf") == 1
@@ -70,7 +70,7 @@ def test_documents_are_deduplicated_keeping_the_best_page():
 def test_at_most_three_documents_are_named():
     """A refusal is not a search-results page."""
     message = no_results_message(
-        [_result(f"doc{i}.pdf", 1, score=0.58 - i / 100) for i in range(6)])
+        [_result(f"doc{i}.pdf", 1, score=0.30 - i / 100) for i in range(6)])
 
     assert message.count(".pdf") == 3
     assert "doc0.pdf" in message and "doc2.pdf" in message
@@ -117,16 +117,15 @@ def test_the_declined_answer_the_user_sees_names_the_documents():
 
 
 def test_a_question_the_corpus_knows_nothing_about_names_nothing():
-    """The reranker's sigmoid puts "no evidence either way" at 0.5.
-    Measured on the real corpus, questions with no bearing on it at all
+    """Measured on the real corpus, questions with no bearing on it at all
     ("What is the capital of Mongolia?", "How do I bake sourdough?") peg
-    their whole candidate list within 0.0002 of that midpoint, while
-    genuine near misses reach 0.503-0.578.
+    their whole candidate list below 0.001 relevance, while genuine near
+    misses reach 0.012-0.31.
 
     Naming documents from the pegged case would manufacture a connection
     the reranker explicitly did not find — worse than saying nothing,
     because the user goes and reads them."""
-    pegged = [_result(f"doc{i}.pdf", 1, score=0.50005) for i in range(3)]
+    pegged = [_result(f"doc{i}.pdf", 1, score=0.0002) for i in range(3)]
 
     assert no_results_message(pegged) == NO_RESULTS_MESSAGE
 
@@ -135,9 +134,9 @@ def test_only_the_candidates_above_the_noise_are_named():
     """One real near miss alongside pegged noise: name the one, not the
     three, or the message pads a true answer with two false ones."""
     message = no_results_message([
-        _result("real.pdf", 46, score=0.517),
-        _result("noise1.pdf", 1, score=0.50004),
-        _result("noise2.pdf", 2, score=0.50001),
+        _result("real.pdf", 46, score=0.068),
+        _result("noise1.pdf", 1, score=0.00016),
+        _result("noise2.pdf", 2, score=0.00004),
     ])
 
     assert "real.pdf, p. 46" in message

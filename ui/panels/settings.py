@@ -24,20 +24,36 @@ import streamlit as st
 from ingestion.chunkers.registry import build_chunker
 from ui.services import list_chat_models, list_loaded_models
 
-# The similarity floor, as three named stops. PROVISIONAL: these are the
-# shipped 0.55 either side of a margin, not calibrated values. Calibration
-# needs a verified golden set (eval/golden_set.real.yaml is drafted, not
-# reviewed) and `run_eval.py --calibrate`. The help text says so rather
-# than implying a rigour that does not exist yet.
+# The similarity floor, as three named stops, on the reranker's probability
+# scale. Each is the lowest floor on a plateau of the 2026-09-25 sweep
+# (eval/run_eval.py --calibrate, 222 cases), where out-of-corpus questions
+# answered hold steady: Lenient 49%, Balanced 31%, Strict 24%, at 8%, 15%
+# and 19% of answerable questions refused. Balanced is config.yaml's
+# score_floor.
 STRICTNESS = {
-    "Strict": 0.65,
-    "Balanced": 0.55,
-    "Lenient": 0.45,
+    "Strict": 0.64,
+    "Balanced": 0.49,
+    "Lenient": 0.18,
 }
+
+# Until 2026-09-25 the stop was saved as its floor, on a scale a second
+# sigmoid squeezed into 0.50-0.73. Mapped by name so nobody's choice moves.
+_LEGACY_FLOORS = {"Strict": 0.65, "Balanced": 0.55, "Lenient": 0.45}
 
 
 def _closest_stop(floor: float) -> str:
     return min(STRICTNESS, key=lambda name: abs(STRICTNESS[name] - floor))
+
+
+def _saved_stop(prefs, default_floor: float) -> str:
+    name = prefs.get("strictness")
+    if name in STRICTNESS:
+        return name
+    legacy = prefs.get("floor")
+    if legacy is not None:
+        return min(_LEGACY_FLOORS,
+                   key=lambda n: abs(_LEGACY_FLOORS[n] - float(legacy)))
+    return _closest_stop(default_floor)
 
 
 def _apply_chunker(svc, strategy: str, chunk_size: int, overlap_pct: int,
@@ -87,13 +103,12 @@ def render(svc) -> dict:
 
         strictness = st.select_slider(
             "Strictness", options=list(STRICTNESS),
-            value=_closest_stop(float(prefs.get("floor", cfg.score_floor))),
+            value=_saved_stop(prefs, cfg.score_floor),
             help="How sure the app must be before it answers at all. "
                  "Stricter refuses more and is safer against questions the "
                  "documents do not cover; more lenient answers more and "
-                 "risks a confident answer built from a weak match. These "
-                 "three stops are provisional — the shipped default either "
-                 "side of a margin, not calibrated numbers.",
+                 "risks a confident answer built from a weak match. "
+                 "Balanced is the calibrated default.",
         )
         floor = STRICTNESS[strictness]
         st.caption(f"Relevance floor: {floor:.2f}")
@@ -217,7 +232,7 @@ def render(svc) -> dict:
             _render_ingestion(svc, cfg, prefs)
             _render_diagnostics(svc, cfg)
 
-    prefs.set("floor", float(floor))
+    prefs.set("strictness", strictness)
 
     return {
         "model": model, "temperature": temperature,

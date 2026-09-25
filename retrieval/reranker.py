@@ -1,5 +1,4 @@
 import logging
-import math
 import os
 
 import httpx
@@ -35,7 +34,7 @@ class BGEReranker:
     """Cross-encoder reranker.
 
     With a url (RERANKER_URL), the model call goes to host_server.py and
-    runs on the host's GPU. Only the model call moves: the sigmoid and the
+    runs on the host's GPU. Only the model call moves: sorting and the
     top_k cut below run here on both paths, so they cannot drift apart. If
     the host service is unreachable, scoring falls back to the in-process
     model with a warning. That's slower, but the same scores to ~1e-6.
@@ -93,10 +92,12 @@ class BGEReranker:
             raw_scores = self._ensure_model().predict(
                 [(query, t) for t in texts])
 
-        # The cross-encoder emits logits, not probabilities. Sigmoid maps
-        # them to (0, 1) so a single interpretable floor can be configured.
+        # Already probabilities in (0, 1): CrossEncoder.predict applies a
+        # sigmoid itself for a one-label model like this one. Applying a
+        # second one here squeezed every score into 0.50-0.73 until
+        # 2026-09-25, and the floors were set on that scale.
         rescored = [
-            SearchResult(chunk=c.chunk, score=1 / (1 + math.exp(-float(s))))
+            SearchResult(chunk=c.chunk, score=float(s))
             for c, s in zip(candidates, raw_scores)
         ]
         rescored.sort(key=lambda r: r.score, reverse=True)
