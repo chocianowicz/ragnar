@@ -188,8 +188,11 @@ Two containers are defined, `app` and `qdrant`, and neither is given a key to an
 external — `docker compose config` is the whole story. There is no account, no API key,
 and no per-token bill.
 
-The one network access in the whole project is HuggingFace downloading the reranker
-weights, once. `HF_TOKEN` is optional and only raises the rate limit while that happens.
+The one network access in the app is HuggingFace downloading the reranker weights,
+once. `HF_TOKEN` is optional and only raises the rate limit while that happens. The
+evaluation harness can additionally grade answers with a cloud judge model
+(`eval/run_ragas.py`); that is opt-in, never part of the running app, and skips cases
+marked `private`.
 
 ---
 
@@ -395,13 +398,17 @@ Which of the extra stages run is *not* configured here — those are per-instanc
 made in Settings and stored in `data/settings.json`, next to the instance's data rather
 than in the repo.
 
-Environment (`.env`):
+Environment. `docker-compose.yml` sets the first two itself; the rest can go in `.env`
+(see `.env.example`):
 
-| Variable | Required | Description |
+| Variable | Default | Description |
 |---|---|---|
-| `OLLAMA_BASE_URL` | Yes | `http://host.docker.internal:11434` — Ollama on the host |
-| `QDRANT_URL` | Yes | `http://qdrant:6333` — the sibling container |
-| `HF_TOKEN` | No | Raises the HuggingFace rate limit while the reranker downloads |
+| `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` | Ollama on the host |
+| `QDRANT_URL` | `http://qdrant:6333` | The sibling container |
+| `PARSER_URL` | `http://host.docker.internal:8007` | Host GPU service for parsing; empty keeps parsing in the container |
+| `RERANKER_URL` | `http://host.docker.internal:8007` | Host GPU service for re-ranking; empty keeps it in the container |
+| `HF_TOKEN` | unset | Raises the HuggingFace rate limit while the reranker downloads |
+| `RAGAS_JUDGE_*` | see `.env.example` | Eval only; the app never reads them |
 
 ---
 
@@ -409,8 +416,10 @@ Environment (`.env`):
 
 Tracked rather than glossed over:
 
-- **The similarity floor is hand-tuned**, not calibrated — see `eval/README.md`. It
-  needs a much larger golden set before the number deserves trust.
+- **The similarity floor is calibrated on one test corpus.** The 222-case golden set
+  is a stand-in, not the contracts and policies the tool is meant for — see
+  `eval/README.md`. Re-run the calibration after a re-ingest, or against a real
+  corpus, before trusting the number there.
 - **No recovery path if the vector store is lost.** Re-embedding from the converted
   document cache (the parsed blocks, not just the markdown) is designed for and
   not implemented: the cache exists, but nothing drives a full rebuild from it.
@@ -419,8 +428,10 @@ Tracked rather than glossed over:
   its old blocks until `converted/<doc_id>.blocks.json` is deleted. A parser version
   in the cache key would fix this.
 
-The test suite runs against real Ollama, Qdrant and Docling rather than mocks, which is
-why it is slow and why it catches integration breakage that mocks would hide.
+`pytest` runs the fast suite on in-memory doubles (`tests/fakes.py`). Tests marked
+`integration` run against real Ollama, Qdrant and Docling and are skipped unless you pass
+`--run-integration`; they are slow, and they catch the integration breakage the doubles
+would hide.
 
 ---
 
