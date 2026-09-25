@@ -31,3 +31,6 @@ ui/static/
 # Admin settings tuned on a running instance, layered over config.yaml.
 # Deployment state, not source.
 data/settings.json
+
+# Page snapshots a browser-automation tool drops in the repo root.
+.playwright-mcp/
