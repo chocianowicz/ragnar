@@ -1,6 +1,10 @@
 import hashlib
+import json
 import shutil
+from dataclasses import asdict
 from pathlib import Path
+
+from ingestion.parser import Block, ParsedDocument
 
 
 class Storage:
@@ -97,6 +101,51 @@ class Storage:
 
     def remove_converted(self, doc_id: str) -> None:
         (self.converted / f"{doc_id}.md").unlink(missing_ok=True)
+        (self.converted / f"{doc_id}.blocks.json").unlink(missing_ok=True)
+
+    def write_parsed(self, doc_id: str, parsed: ParsedDocument) -> None:
+        """Cache the parsed blocks so a chunking-only change can skip the
+        (expensive) Docling parse.
+
+        Markdown is not duplicated here: it is already on disk via
+        write_converted, keyed by the same doc_id, and the chunker reads only
+        blocks. Written with the same explicit encoding as the markdown, for
+        the same reason — the corpus is Polish and English.
+
+        Parsing is deterministic for a given file and parser, so this is safe
+        to reuse; it is *not* safe to reuse across a change to the parser
+        itself (a new OCR setting, say), which is why the file is keyed by
+        doc_id alone and must be deleted to force a re-parse.
+        """
+        payload = {
+            "low_confidence": parsed.low_confidence,
+            "blocks": [asdict(b) for b in parsed.blocks],
+        }
+        (self.converted / f"{doc_id}.blocks.json").write_text(
+            json.dumps(payload), encoding=self.ENCODING)
+
+    def read_parsed(self, doc_id: str) -> ParsedDocument | None:
+        """The cached blocks for this doc_id, or None if there is no usable
+        cache and the caller has to parse.
+
+        None rather than an exception on anything unusable: a re-chunk is
+        exactly the operation that must not fail, and a cache miss costs only
+        the time it used to cost. That covers a file from an older format,
+        which must not be trusted to have this shape — `markdown` in
+        particular is reconstructed empty, so a caller that wants markdown
+        reads it from write_converted's file, not from here.
+        """
+        path = self.converted / f"{doc_id}.blocks.json"
+        if not path.exists():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding=self.ENCODING))
+            blocks = [Block(**b) for b in payload["blocks"]]
+            low_confidence = bool(payload["low_confidence"])
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+        return ParsedDocument(markdown="", blocks=blocks,
+                              low_confidence=low_confidence)
 
     def pending_files(self) -> list[Path]:
         return sorted(p for p in self.inbox.iterdir() if p.is_file())
