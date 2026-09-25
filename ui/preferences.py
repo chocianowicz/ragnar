@@ -38,7 +38,7 @@ class Preferences:
             log.warning("ignoring unreadable %s: %s", self._path, exc)
             return {}
 
-    def get(self, key: str, default):
+    def get(self, key: str, default=None):
         """The stored value, or `default` from config.yaml.
 
         The default's type wins: a hand-edited file that says "25" for a
