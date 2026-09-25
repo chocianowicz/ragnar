@@ -88,12 +88,21 @@ look in here.*
 ```
 ☑ Select all
 
-▾ ☐ Acme Corp                                  3/12
-    ☑ ✅ nda.pdf              [ Acme Corp ▾ ]   ✕
-    ☑ ✅ sow.pdf              [ Acme Corp ▾ ]   ✕
-    ☐ ✅ invoice.xlsx         [ Acme Corp ▾ ]   ✕
-▸ ☑ Northwind Ltd                             12/12
-▸ ☑ Unfiled                                   32/32
+☐ ┌──────────────────────────────────┐
+  │ ▾ Acme Corp · 3/12             ⋯ │
+  └──────────────────────────────────┘
+  │ ☑ ┌──────────────────────────────┐
+  │   │ ✅ nda.pdf                  ⋯ │
+  │   └──────────────────────────────┘
+  │ ☐ ┌──────────────────────────────┐
+  │   │ ✅ invoice.xlsx             ⋯ │
+  │   └──────────────────────────────┘
+☑ ┌──────────────────────────────────┐
+  │ ▸ Northwind Ltd · 12/12        ⋯ │
+  └──────────────────────────────────┘
+☑ ┌──────────────────────────────────┐
+  │ ▸ Unfiled · 32/32                │
+  └──────────────────────────────────┘
 ```
 
 The checkbox you already know, at three levels: **Select all**, then a folder, then a
@@ -101,9 +110,12 @@ document. Ticking a folder ticks everything in it, and only ticked documents are
 searched. Streamlit has no half-filled checkbox, so a partly-ticked folder reads as
 unchecked and the `3/12` count carries the real state.
 
-A document is filed with the picker on its own row. The tick and the picker do
-different jobs on purpose: the tick means *search this*, and giving it a second meaning
-would make filing a document silently narrow the next answer.
+Click anywhere on a folder's name to fold or unfold it; its documents hang off it on a
+tree line. Click a document's name to preview it. Each row's ⋯ holds the rest: a
+folder's has **Rename** and **Delete folder**, a document's has **Move to** and
+**Remove document**. The tick and the move do different jobs on purpose: the tick means
+*search this*, and giving it a second meaning would make filing a document silently
+narrow the next answer.
 
 **A chat remembers what it was scoped to.** Ask about Acme with only Acme ticked, come
 back tomorrow, and reopening that conversation restores that scope. Folders are stored
@@ -111,8 +123,8 @@ by identity rather than by name, so renaming one changes nothing, and a document
 to Acme after the chat was saved comes back ticked with the rest.
 
 **Nothing here can lose a document.** Deleting a folder returns its documents to
-Unfiled; the ✕ on a row is still the only thing that removes one. `Unfiled` is not a
-folder but the absence of one, which is why the name is reserved.
+Unfiled; **Remove document** in a row's ⋯ is still the only thing that removes one.
+`Unfiled` is not a folder but the absence of one, which is why the name is reserved.
 
 Re-uploading a corrected file keeps its folder. A document's id is a hash of its
 contents, so fixing a typo produces a new, unrelated document — it inherits the folder
