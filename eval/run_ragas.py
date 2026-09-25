@@ -69,6 +69,9 @@ def build_judge(cfg: Config) -> tuple[ChatOpenAI, str]:
                                 f"{cfg.ollama_url}/v1").strip(),
         api_key=os.environ.get("RAGAS_JUDGE_API_KEY", "ollama").strip(),
         temperature=0,
+        # Per request. Without it a stalled connection hung a run for hours:
+        # RunConfig's timeout did not reach it.
+        timeout=120,
     )
     return judge, model
 
@@ -80,6 +83,7 @@ def build_embeddings(cfg: Config) -> OpenAIEmbeddings:
         api_key="ollama",
         # Ollama takes text, not the pre-tokenised ids this would send.
         check_embedding_ctx_length=False,
+        timeout=120,
     )
 
 
@@ -175,7 +179,13 @@ def tasks(cases: list[dict], noise: bool = False) -> tuple[list, Counter]:
 def score(pending: list, out: Path, judge, embeddings,
           batch_size: int) -> None:
     """Judge pending tasks batch by batch, appending each batch to out."""
-    run_config = RunConfig(max_workers=4, timeout=180, max_retries=3)
+    # 600s: noise_sensitivity makes many judge calls per case and a reasoning
+    # judge timed 40% of them out at 180s. Requests time out separately.
+    # Parallel judge calls. ollama.com caps concurrent requests per account
+    # and answers the excess with 429 "waiting for a concurrent request
+    # slot", which surfaced here as timeouts; set RAGAS_JUDGE_WORKERS to fit.
+    workers = int(os.environ.get("RAGAS_JUDGE_WORKERS", "4"))
+    run_config = RunConfig(max_workers=workers, timeout=600, max_retries=3)
     metrics = {**METRICS, "noise": [NoiseSensitivity(mode="relevant")]}
     by_kind: dict[str, list] = {}
     for key, kind, sample in pending:

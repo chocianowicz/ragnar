@@ -20,7 +20,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.3", "pytest-cov>=6.0", "reportlab>=4.2"]
-eval = ["ragas>=0.2", "langchain-openai>=0.2", "datasets>=3.0"]
+# ragas 0.4.3 imports langchain_community.chat_models.vertexai, removed in 0.4.2.
+eval = ["ragas>=0.2", "langchain-openai>=0.2", "langchain-community<0.4.2", "datasets>=3.0"]
 
 [tool.setuptools.packages.find]
 where = ["."]
