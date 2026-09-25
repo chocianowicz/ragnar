@@ -47,8 +47,22 @@ from eval.stats import metric_ci, read_jsonl
 ROOT = Path(__file__).parent
 
 
+def private_companion(path: Path) -> Path:
+    """golden_set.yaml -> golden_set.private.yaml, beside it."""
+    return path.with_name(f"{path.stem}.private{path.suffix}")
+
+
 def load_golden(path: Path) -> list[dict]:
-    entries = yaml.safe_load(path.read_text(encoding="utf-8"))
+    """A golden set, plus its gitignored private companion if present.
+
+    Cases about personal documents cannot live in a tracked file, so they
+    sit in <name>.private.yaml. Without that file a run covers the public
+    cases only, which is what anyone cloning the repo gets.
+    """
+    entries = yaml.safe_load(path.read_text(encoding="utf-8")) or []
+    companion = private_companion(path)
+    if companion.exists():
+        entries += yaml.safe_load(companion.read_text(encoding="utf-8")) or []
     if not entries:
         raise SystemExit(f"{path} is empty — nothing to evaluate.")
     return entries

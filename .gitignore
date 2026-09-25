@@ -20,6 +20,10 @@ build/
 data/
 .env
 
+# Golden-set cases about personal documents. Loaded beside the tracked set
+# by eval/run_eval.py load_golden(); never published.
+eval/*.private.yaml
+
 # eval reports can contain full chunk text from whatever corpus was
 # evaluated - never commit real document content
 eval/reports/

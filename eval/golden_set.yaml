@@ -5,6 +5,11 @@
 # Without them you can measure whether good answers are correct, but not
 # whether bad questions get refused - and the refusal path is the whole
 # trust story.
+#
+# Cases about personal documents live in golden_set.private.yaml beside
+# this file. It is gitignored, and load_golden() appends it when present,
+# so this file must never hold a `private: true` entry
+# (tests/test_golden_privacy.py fails if it does).
 
 - question: "Who are the editors of the Macintosh Terminal Pocket Guide?"
   expected_answer: "Mike Loukides and Andy Oram"
