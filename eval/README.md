@@ -124,12 +124,24 @@ ignored it.
 
 ## Current state
 
-`golden_set.yaml` holds 222 hand-reviewed cases over 17 PDFs, ported from
+The golden set is 222 hand-reviewed cases over 17 PDFs, ported from
 branch `main_alex`. 51 are out-of-corpus (8 of them near-miss probes about
-books not in the library), 7 are follow-up chains, and 41 are marked
-`private`. Every source must be indexed first, and `run_eval.py` refuses
-to run if one is missing. The old 5-case fixture set this section
-described is gone.
+books not in the library) and 7 are follow-up chains. Every source must be
+indexed first, and `run_eval.py` refuses to run if one is missing. The old
+5-case fixture set this section described is gone.
+
+It is split across two files:
+
+- `golden_set.yaml` (168 cases, tracked) — everything about public
+  documents.
+- `golden_set.private.yaml` (54 cases, gitignored, never published) — the
+  cases about personal documents, including the refusal probes that name
+  them. All are `private: true`.
+
+`load_golden()` appends `<name>.private.yaml` to any golden set it loads
+when that file exists, so the numbers below need both files; a fresh clone
+runs the 168 public cases. `tests/test_golden_privacy.py` fails if a
+tracked golden file ever holds a `private` case.
 
 The set was audited with `check_golden.py` on 2026-09-24, and 41 of 215
 entries were flagged:
@@ -138,7 +150,7 @@ entries were flagged:
 - 8 out-of-corpus probes turned out to be answerable from copyright pages.
   They became in-corpus cases and were replaced with near-miss probes.
 - 2 expected answers were incomplete and were corrected.
-- The Goldman case "Jaki jest tytuł dokumentu?" was dropped.
+- One private case was dropped.
 
 `retrieval.score_floor` is 0.49, calibrated on 2026-09-25 against the
 222-case set with `--calibrate --retrieval-only --multi-query --floors

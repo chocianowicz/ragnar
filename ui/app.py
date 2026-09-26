@@ -122,6 +122,57 @@ section[data-testid="stSidebar"] div[data-testid="stExpander"] summary p {
     font-weight: 500 !important;
     opacity: 0.8;
 }
+
+/* A folder's documents hang off its header like a file tree: indented,
+   with a rule down the left that ends where the folder does. Grey with
+   alpha rather than a fixed colour, so it holds in both themes. */
+[class*="st-key-folder_docs_"] {
+    margin-left: 0.6rem;
+    /* Streamlit sizes blocks at width 100%, so the margin would push the
+       right edge past the folder header's. Give it back. */
+    width: calc(100% - 0.6rem) !important;
+    padding-left: 0.6rem;
+    border-left: 2px solid rgba(128, 128, 128, 0.35);
+}
+
+/* Folder headers and document rows are each one bordered body. The name
+   and the ⋯ are buttons inside it, so they drop their own frames, and the
+   name reads left to right like a row, not a centred button. */
+[class*="st-key-rowbox_"] {
+    padding: 0.1rem 0.25rem !important;
+}
+[class*="st-key-rowbox_"] button {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    min-height: 2rem;
+}
+[class*="st-key-rowbox_"] button:hover {
+    background: rgba(128, 128, 128, 0.15) !important;
+}
+[class*="st-key-fold_"] button,
+[class*="st-key-fold_"] button > div,
+[class*="st-key-view_"] button,
+[class*="st-key-view_"] button > div {
+    justify-content: flex-start !important;
+    width: 100%;
+}
+[class*="st-key-fold_"] button p,
+[class*="st-key-view_"] button p {
+    text-align: left;
+}
+/* The ⋯ alone says "menu"; the popover's own chevron only crowds it out of
+   a narrow sidebar. */
+[class*="st-key-rowbox_"] [data-testid="stPopover"] button {
+    padding: 0 0.25rem !important;
+    justify-content: center !important;
+}
+[class*="st-key-rowbox_"] [data-testid="stPopover"] button [aria-hidden="true"] {
+    display: none;
+}
+[class*="st-key-rowbox_"] [data-testid="stPopover"] button * {
+    overflow: visible !important;
+}
 </style>
 """
 

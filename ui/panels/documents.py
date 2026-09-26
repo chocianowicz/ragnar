@@ -141,41 +141,50 @@ def _render_folder(svc, folder_id, label, group, checked_ids,
     open_key = f"folder_open_{folder_id}"
     is_open = st.session_state.setdefault(open_key, True)
 
-    col_fold, col_check, col_name, col_count, col_menu = st.columns(
-        [0.45, 0.5, 3.0, 0.8, 1])
-    with col_fold:
-        with st.container(key=f"fold_container_{folder_id}"):
-            if st.button("▾" if is_open else "▸", key=f"fold_{folder_id}",
-                         help=("Hide these documents" if is_open
-                               else f"Show {len(group)} document(s)")):
-                st.session_state[open_key] = not is_open
-                st.rerun()
+    # The checkbox leads, as it does on every document row. The rest is one
+    # bordered body: clicking anywhere on the arrow, name or count folds
+    # the folder, and the ⋯ sits inside the same body on the right.
+    col_check, col_body = st.columns([0.5, 5.25], vertical_alignment="center")
     with col_check:
         st.checkbox(f"Include {label}", key=f"folder_sel_{folder_id}",
                     on_change=_folder_changed, label_visibility="collapsed")
-    with col_name:
-        st.markdown(f"**{label}**")
-    with col_count:
-        # The count is what a folded folder says about itself, so it earns
-        # its place most when the documents are hidden.
-        st.caption(count)
-    with col_menu:
-        # Unfiled is the absence of a folder, not a row: there is nothing
-        # to rename and nothing to delete.
-        if folder_id != folders.UNFILED:
-            _folder_menu(svc, folder_id, label, group, all_folders)
+    with col_body:
+        # Columns, not a horizontal container: the sidebar is narrow enough
+        # that a horizontal container wraps the ⋯ onto a line of its own.
+        with st.container(key=f"rowbox_folder_{folder_id}", border=True):
+            col_fold, col_menu = st.columns([4, 1],
+                                            vertical_alignment="center",
+                                            gap="small")
+            with col_fold:
+                # The count is what a folded folder says about itself, so
+                # it stays in the label where it is visible either way.
+                arrow = "▾" if is_open else "▸"
+                if st.button(f"{arrow}  **{label}**  ·  {count}",
+                             key=f"fold_{folder_id}", width="stretch",
+                             help=("Hide these documents" if is_open
+                                   else f"Show {len(group)} document(s)")):
+                    st.session_state[open_key] = not is_open
+                    st.rerun()
+            with col_menu:
+                # Unfiled is the absence of a folder, not a row: there is
+                # nothing to rename and nothing to delete.
+                if folder_id != folders.UNFILED:
+                    _folder_menu(svc, folder_id, label, group, all_folders)
 
     if not is_open:
         return
-    if not group:
-        st.caption("&nbsp;&nbsp;&nbsp;&nbsp;*empty*", unsafe_allow_html=True)
-    for doc in group:
-        _render_document(svc, doc, all_folders)
+    # One keyed container for the whole group, so the tree rule in APP_CSS
+    # runs from the first document to the last and stops there.
+    with st.container(key=f"folder_docs_{folder_id}"):
+        if not group:
+            st.caption("*empty*")
+        for doc in group:
+            _render_document(svc, doc, all_folders)
 
 
 def _folder_menu(svc, folder_id, label, group, all_folders) -> None:
     """Rename and delete, behind the folder's ⋯."""
-    with st.popover("⋯", use_container_width=True):
+    with st.popover("⋯", width="stretch"):
         new_name = st.text_input("Rename to", value=label,
                                  key=f"rename_{folder_id}")
         if st.button("Rename", key=f"rename_go_{folder_id}",
@@ -209,7 +218,7 @@ def _document_menu(svc, doc, all_folders) -> None:
     would leave it pointing at a name that no longer exists. A button has
     nothing to remember.
     """
-    with st.popover("⋯", use_container_width=True):
+    with st.popover("⋯", width="stretch"):
         st.caption("Move to")
         targets = [(None, folders.UNFILED_LABEL)]
         targets += [(f.folder_id, f.name) for f in all_folders]
@@ -240,7 +249,9 @@ def _document_menu(svc, doc, all_folders) -> None:
 def _render_document(svc, doc, all_folders) -> None:
     icon = STATUS_ICONS[doc.status.value]
 
-    col_check, col_view, col_menu = st.columns([0.6, 4.4, 1])
+    # Same shape as the folder header: checkbox first, then one bordered
+    # body holding the name (click to preview) and the ⋯.
+    col_check, col_body = st.columns([0.5, 5.25], vertical_alignment="center")
     with col_check:
         # value= seeds the widget only on the run that creates it, which
         # is exactly what is needed when a folded folder is opened again
@@ -251,14 +262,19 @@ def _render_document(svc, doc, all_folders) -> None:
                     key=f"sel_{doc.doc_id}",
                     label_visibility="collapsed")
         selection.remember(doc.doc_id)
-    with col_view:
-        if st.button(f"{icon} {doc.filename}", key=f"view_{doc.doc_id}",
-                     use_container_width=True):
-            show_key = f"show_md_{doc.doc_id}"
-            st.session_state[show_key] = not st.session_state.get(show_key, False)
-    with col_menu:
-        with st.container(key=f"menu_container_{doc.doc_id}"):
-            _document_menu(svc, doc, all_folders)
+    with col_body:
+        with st.container(key=f"rowbox_doc_{doc.doc_id}", border=True):
+            col_view, col_menu = st.columns([4, 1],
+                                            vertical_alignment="center",
+                                            gap="small")
+            with col_view:
+                if st.button(f"{icon} {doc.filename}",
+                             key=f"view_{doc.doc_id}", width="stretch"):
+                    show_key = f"show_md_{doc.doc_id}"
+                    st.session_state[show_key] = not st.session_state.get(
+                        show_key, False)
+            with col_menu:
+                _document_menu(svc, doc, all_folders)
 
     # Outside the columns, as they were in the flat list: the viewer needs
     # the full width, not a fifth of it.
